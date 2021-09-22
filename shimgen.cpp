@@ -23,8 +23,7 @@ void run_help()
     cout << "                              compatibility with RDS ShimGen\n";
     cout << "  -c, --command=STRING      Extra arguments the shim should\n";
     cout << "                              pass to the original executable\n";
-    cout << "  --gui                     Not implemented, available for\n";
-    cout << "                              compatibility with RDS ShimGen\n";
+    cout << "  --gui                     Force shim to launch app as GUI\n";
     cout << "  --debug                   Not implemented, available for\n";
     cout << "                              compatibility with RDS ShimGen\n";
     cout << "\n  Arguments with * are required" << endl;
@@ -214,12 +213,6 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 
         // Would validate --command here, but no validation to do?
 
-        if (argsGui)
-        {
-            cout << "--gui not implemented yet, ignoring\n";
-            //TODO, add force gui option to shim.cpp?
-        }
-
         if (exitcode == 0)
         {
             filesystem::path outputShimArgsPath = outputPath;
@@ -241,8 +234,13 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 
                 if (shimArgs != L"")
                 {
-                    outputShimArgsHandle << "args = " << get_utf8(shimArgs);
+                    outputShimArgsHandle << "args = " << get_utf8(shimArgs) << "\n";
                 }
+
+                if (argsGui) {
+                    outputShimArgsHandle << "gui = force\n";
+                }
+
                 outputShimArgsHandle.close();
             }
 

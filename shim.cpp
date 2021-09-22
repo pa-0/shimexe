@@ -35,7 +35,7 @@ BOOL WINAPI CtrlHandler(DWORD ctrlType)
 struct HandleDeleter
 {
     typedef HANDLE pointer;
-    void operator() (HANDLE handle)
+    void operator()(HANDLE handle)
     {
         if (handle)
         {
@@ -44,13 +44,12 @@ struct HandleDeleter
     }
 };
 
-namespace std
-{
-    typedef unique_ptr<HANDLE, HandleDeleter> unique_handle;
-    typedef optional<wstring> wstring_p;
-}
+namespace std {
+typedef unique_ptr<HANDLE, HandleDeleter> unique_handle;
+typedef optional<wstring> wstring_p;
+} // namespace std
 
-std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
+std::tuple<std::wstring_p, std::wstring_p, std::wstring_p> GetShimInfo()
 {
     // Find filename of current executable.
     wchar_t filename[MAX_PATH + 2];
@@ -59,7 +58,7 @@ std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
     if (filenameSize >= MAX_PATH)
     {
         fprintf(stderr, "The filename of the program is too long to handle.\n");
-        return {std::nullopt, std::nullopt};
+        return {std::nullopt, std::nullopt, std::nullopt};
     }
 
     // Use filename of current executable to find .shim
@@ -70,15 +69,16 @@ std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
     if (_wfopen_s(&fp, filename, L"r,ccs=UTF-8") != 0)
     {
         fprintf(stderr, "Cannot open shim file for read.\n");
-        return {std::nullopt, std::nullopt};
+        return {std::nullopt, std::nullopt, std::nullopt};
     }
 
     std::unique_ptr<FILE, decltype(&fclose)> shimFile(fp, &fclose);
 
     // Read shim
-    wchar_t linebuf[1<<14];
+    wchar_t linebuf[1 << 14];
     std::wstring_p path;
     std::wstring_p args;
+    std::wstring_p gui;
     while (true)
     {
         if (!fgetws(linebuf, ARRAYSIZE(linebuf), shimFile.get()))
@@ -104,9 +104,15 @@ std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
             args.emplace(line.data() + 7, line.size() - 7 - (line.back() == L'\n' ? 1 : 0));
             continue;
         }
+
+        if (line.substr(0, 3) == L"gui")
+        {
+            gui.emplace(line.data() + 6, line.size() - 6 - (line.back() == L'\n' ? 1 : 0));
+            continue;
+        }
     }
 
-    return {path, args};
+    return {path, args, gui};
 }
 
 std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstring_p& path, const std::wstring_p& args)
@@ -175,7 +181,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
 
 int wmain(int argc, wchar_t* argv[])
 {
-    auto [path, args] = GetShimInfo();
+    auto [path, args, gui] = GetShimInfo();
 
     if (!path)
     {
@@ -188,6 +194,11 @@ int wmain(int argc, wchar_t* argv[])
         args.emplace();
     }
 
+    if (!gui)
+    {
+        gui.emplace();
+    }
+
     auto cmd = GetCommandLineW();
     if (cmd[0] == L'\"')
     {
@@ -198,9 +209,18 @@ int wmain(int argc, wchar_t* argv[])
         args->append(cmd + wcslen(argv[0]));
     }
 
-    // Find out if the target program is a console app
-    SHFILEINFOW sfi = {};
-    const auto isWindowsApp = HIWORD(SHGetFileInfoW(path->c_str(), -1, &sfi, sizeof(sfi), SHGFI_EXETYPE)) != 0;
+    bool isWindowsApp = false;
+
+    if (gui == L"force")
+    {
+        isWindowsApp = true;
+    }
+    else
+    {
+        // Find out if the target program is a console app
+        SHFILEINFOW sfi = {};
+        isWindowsApp = HIWORD(SHGetFileInfoW(path->c_str(), -1, &sfi, sizeof(sfi), SHGFI_EXETYPE)) != 0;
+    }
 
     if (isWindowsApp)
     {
