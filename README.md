@@ -4,7 +4,7 @@ Based on [kiennq's c++ shim implementation](https://github.com/kiennq/scoop-bett
 
 ## Installation
 
-- In a Visual Studio command prompt, run `cl.exe /nologo /std:c++17 /DNDEBUG /MD /O1 /GF /GR- /GL shim.cpp`.
+- In a Visual Studio command prompt, run `cl.exe /nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL shim.cpp`.
 - Or using `clang++` with `clang++ shim.cpp -o shim.exe -m32 -O -std=c++17 -g`.
 - Replace any `.exe` in `scoop\shims` by `shim.exe`.
 

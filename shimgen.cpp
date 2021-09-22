@@ -4,6 +4,7 @@
 #include <string>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 
 #include "shimgen-resources.h"
 
@@ -11,9 +12,22 @@ using namespace std;
 
 void run_help()
 {
-    cout << "TODO display help here" << endl;
-    cout << "TODO display help here" << endl;
-    cout << "TODO display help here" << endl;
+    cout << "Scoop Style ShimGen creates Scoop Style Shims for Chocolatey\n";
+    cout << "It is a drop in replacement for Real Dimensions Software's ShimGen.exe\n";
+    cout << "\nAvailable arguments: \n";
+    cout << "  -?, -h, --help            Prints out this message\n";
+    cout << "* -o, --output=STRING       Path of the shim to be created\n";
+    cout << "* -p, --path=STRING         Path to the executable for\n";
+    cout << "                              which to create a shim\n";
+    cout << "  -i, --iconpath=STRING     Not implemented, available for\n";
+    cout << "                              compatibility with RDS ShimGen\n";
+    cout << "  -c, --command=STRING      Extra arguments the shim should\n";
+    cout << "                              pass to the original executable\n";
+    cout << "  --gui                     Not implemented, available for\n";
+    cout << "                              compatibility with RDS ShimGen\n";
+    cout << "  --debug                   Not implemented, available for\n";
+    cout << "                              compatibility with RDS ShimGen\n";
+    cout << "\n  Arguments with * are required" << endl;
 }
 
 bool wstring_starts_with(const wstring& checkstring, const wstring& comparestring)
@@ -21,7 +35,8 @@ bool wstring_starts_with(const wstring& checkstring, const wstring& comparestrin
     return ((checkstring.compare(0, comparestring.length(), comparestring)) == 0);
 }
 
-void get_arg_value(const vector<wstring>& args, const size_t& currentPos, wstring& argVariable, bool& argFound)
+template<typename PathType>
+void get_arg_value(const vector<wstring>& args, const size_t& currentPos, PathType& argVariable, bool& argFound)
 {
     size_t pos = args[currentPos].find('=');
 
@@ -68,7 +83,9 @@ void unpack_shim(const filesystem::path& path)
             DWORD bytesWritten = 0;
             WriteFile(hFile, exeBuf, exeSiz, &bytesWritten, NULL);
             CloseHandle(hFile);
-        } else {
+        }
+        else
+        {
             throw "Could not unpack shim.exe file\n";
         }
     }
@@ -81,9 +98,32 @@ void unpack_shim(const filesystem::path& path)
     return;
 }
 
+std::string get_utf8(const std::wstring &wstr)
+{
+    if (wstr.empty()) return std::string();
+    int sz = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), 0, 0, 0, 0);
+    std::string res(sz, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &res[0], sz, 0, 0);
+    return res;
+}
+
 int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 {
     vector<wstring> args(argv + 1, argv + argc);
+
+    // Find filename of current executable.
+    wchar_t filenameWChar[MAX_PATH + 2];
+    const auto filenameSize = GetModuleFileNameW(nullptr, filenameWChar, MAX_PATH);
+
+    if (filenameSize >= MAX_PATH)
+    {
+        throw "The filename of the program is too long to handle.\n";
+    }
+
+    filesystem::path shimgenPath(filenameWChar);
+    shimgenPath = filesystem::canonical(shimgenPath);
+    filesystem::current_path((filesystem::path(shimgenPath)).remove_filename());
+
 
     int exitcode = 0;
 
@@ -95,7 +135,8 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
     bool argsGui = false;
     bool argsDebug = false;
 
-    wstring outputPath, inputPath, iconPath, shimArgs;
+    wstring shimArgs;
+    filesystem::path outputPath, inputPath, iconPath;
 
     for (size_t i = 0; i < args.size(); i++)
     {
@@ -154,8 +195,7 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
         }
         else
         {
-            // relative output paths based on $env:chocolateyinstall\bin?
-            // check and convert to abs here?
+            outputPath = filesystem::weakly_canonical(outputPath);
         }
 
         if ((!argsPath) || (inputPath == L""))
@@ -170,8 +210,7 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
         }
         else
         {
-            // relative input path, where relative too?
-            // check and convert to abs here?
+            inputPath = filesystem::weakly_canonical(inputPath);
         }
 
         if (argsIcon)
@@ -191,19 +230,37 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 
         if (exitcode == 0)
         {
-            filesystem::path shimExePath = filesystem::canonical(filesystem::path(argv[0])).replace_filename("shim.exe");
-            filesystem::path shimShimPath = shimExePath.replace_extension(".shim");
+            filesystem::path unpackedShimPath = shimgenPath;
+            unpackedShimPath.replace_filename("shim.exe");
 
-            unpack_shim(shimExePath);
+            filesystem::path outputShimArgsPath = outputPath;
+            outputShimArgsPath.replace_extension(".shim");
 
-            // copy shim to output path
+            unpack_shim(unpackedShimPath);
 
-            // open shimShimPath as text file
-            // write out inputPath into it
-            // write out shimArgs into it
-            // close file
+            //Error checking?
+            filesystem::copy_file(unpackedShimPath, outputPath, filesystem::copy_options::overwrite_existing);
 
-            // cout that the shim was created.
+            ofstream outputShimArgsHandle;
+            outputShimArgsHandle.open(outputShimArgsPath);
+            if (outputShimArgsHandle.fail())
+            {
+                cerr << outputShimArgsPath << " cannot be be opened\n";
+                throw "Shim args file cannot be opened";
+            }
+            else
+            {
+
+                outputShimArgsHandle << "path = " << get_utf8(inputPath) << "\n";
+
+                if (shimArgs != L"")
+                {
+                    outputShimArgsHandle << "args = " << get_utf8(shimArgs);
+                }
+                outputShimArgsHandle.close();
+            }
+
+            cout << "ShimGen has successfully created " << outputPath << endl;
         }
     }
 
