@@ -5,6 +5,8 @@
 #include <exception>
 #include <filesystem>
 
+#include "shimgen-resources.h"
+
 using namespace std;
 
 void run_help()
@@ -53,8 +55,25 @@ void unpack_shim(const filesystem::path& path)
 {
     if (!filesystem::exists(path))
     {
-        //TODO, unpack shim.exe from resources if it is not already unpacked
-    } else {
+        DWORD bytesWritten = 0;
+        HANDLE hFile = INVALID_HANDLE_VALUE;
+        HRSRC hResource = FindResource(NULL, MAKEINTRESOURCE(IDB_EMBEDEXE), MAKEINTRESOURCE(10));
+        HGLOBAL hGlobal = LoadResource(NULL, hResource);
+        size_t exeSiz = SizeofResource(NULL, hResource); // Size of the embedded data
+        void* exeBuf = LockResource(hGlobal);
+
+        hFile = CreateFileW(path.wstring().c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile != INVALID_HANDLE_VALUE)
+        {
+            DWORD bytesWritten = 0;
+            WriteFile(hFile, exeBuf, exeSiz, &bytesWritten, NULL);
+            CloseHandle(hFile);
+        } else {
+            throw "Could not unpack shim.exe file\n";
+        }
+    }
+    else
+    {
         //Assume it exists and is valid, debug message here?
         //validate checksum?
     }

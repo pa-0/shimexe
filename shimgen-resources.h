@@ -1,0 +1,1 @@
+#define IDB_EMBEDEXE 9153489
