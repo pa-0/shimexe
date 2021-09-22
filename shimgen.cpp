@@ -13,7 +13,7 @@ using namespace std;
 void run_help()
 {
     cout << "Scoop Style ShimGen creates Scoop Style Shims for Chocolatey\n";
-    cout << "It is a drop in replacement for Real Dimensions Software's ShimGen.exe\n";
+    cout << "It is a drop in replacement for RealDimensions Software's ShimGen.exe\n";
     cout << "\nAvailable arguments: \n";
     cout << "  -?, -h, --help            Prints out this message\n";
     cout << "* -o, --output=STRING       Path of the shim to be created\n";
