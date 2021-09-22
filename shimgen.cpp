@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <exception>
+#include <filesystem>
 
 using namespace std;
 
@@ -18,7 +19,50 @@ bool wstring_starts_with(const wstring& checkstring, const wstring& comparestrin
     return ((checkstring.compare(0, comparestring.length(), comparestring)) == 0);
 }
 
-int wmain(int argc, wchar_t* argv[])
+void get_arg_value(const vector<wstring>& args, const size_t& currentPos, wstring& argVariable, bool& argFound)
+{
+    size_t pos = args[currentPos].find('=');
+
+    //If there is not a "=", a space was used, so check next argument in vector
+    if (pos == wstring::npos)
+    {
+        size_t nextArg = currentPos + 1;
+        // Short circuited check to make sure we are within vector
+        if ((nextArg < args.size()) && (args[nextArg][0] != '-'))
+        {
+            argVariable = args[nextArg];
+            argFound = true;
+        }
+    }
+    else
+    {
+        argVariable = args[currentPos].substr(pos + 1);
+        argFound = true;
+    }
+
+    return;
+}
+
+bool validate_path(const wstring& path)
+{
+    //TODO
+    return true;
+}
+
+void unpack_shim(const filesystem::path& path)
+{
+    if (!filesystem::exists(path))
+    {
+        //TODO, unpack shim.exe from resources if it is not already unpacked
+    } else {
+        //Assume it exists and is valid, debug message here?
+        //validate checksum?
+    }
+
+    return;
+}
+
+int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 {
     vector<wstring> args(argv + 1, argv + argc);
 
@@ -32,7 +76,7 @@ int wmain(int argc, wchar_t* argv[])
     bool argsGui = false;
     bool argsDebug = false;
 
-    wstring output, path, icon, command;
+    wstring outputPath, inputPath, iconPath, shimArgs;
 
     for (size_t i = 0; i < args.size(); i++)
     {
@@ -44,19 +88,19 @@ int wmain(int argc, wchar_t* argv[])
             }
             else if (wstring_starts_with(args[i], L"-o") || wstring_starts_with(args[i], L"--output"))
             {
-                argsOutput = true;
+                get_arg_value(args, i, outputPath, argsOutput);
             }
             else if (wstring_starts_with(args[i], L"-p") || wstring_starts_with(args[i], L"--path"))
             {
-                argsOutput = true;
+                get_arg_value(args, i, inputPath, argsPath);
             }
             else if (wstring_starts_with(args[i], L"-i") || wstring_starts_with(args[i], L"--iconpath"))
             {
-                argsOutput = true;
+                get_arg_value(args, i, iconPath, argsIcon);
             }
             else if (wstring_starts_with(args[i], L"-c") || wstring_starts_with(args[i], L"--command"))
             {
-                argsOutput = true;
+                get_arg_value(args, i, shimArgs, argsCommand);
             }
             else if (wstring_starts_with(args[i], L"--gui"))
             {
@@ -65,15 +109,84 @@ int wmain(int argc, wchar_t* argv[])
             else if (wstring_starts_with(args[i], L"--debug"))
             {
                 argsDebug = true;
-            } 
-            else 
+            }
+            else
             {
                 wcerr << L"Invalid Argument: " << args[i] << endl;
             }
         }
     }
 
-    run_help();
+    if ((argc == 1) || (argsHelp))
+    {
+        run_help();
+    }
+    else
+    {
+        if ((!argsOutput) || (outputPath == L""))
+        {
+            cerr << "An output path must be specified\n";
+            exitcode = 1;
+        }
+        else if (!validate_path(outputPath))
+        {
+            cerr << "Invalid output argument\n";
+            exitcode = 1;
+        }
+        else
+        {
+            // relative output paths based on $env:chocolateyinstall\bin?
+            // check and convert to abs here?
+        }
+
+        if ((!argsPath) || (inputPath == L""))
+        {
+            cerr << "An path must be specified\n";
+            exitcode = 1;
+        }
+        else if (!validate_path(inputPath))
+        {
+            cerr << "Invalid path argument\n";
+            exitcode = 1;
+        }
+        else
+        {
+            // relative input path, where relative too?
+            // check and convert to abs here?
+        }
+
+        if (argsIcon)
+        {
+            cout << "-i --icon not implemented yet, ignoring\n";
+            //Edit resources of shim?
+            //May be just unsupported as that would change the checksum.
+        }
+
+        // Would validate --command here, but no validation to do?
+
+        if (argsGui)
+        {
+            cout << "--gui not implemented yet, ignoring\n";
+            //TODO, add force gui option to shim.cpp?
+        }
+
+        if (exitcode == 0)
+        {
+            filesystem::path shimExePath = filesystem::canonical(filesystem::path(argv[0])).replace_filename("shim.exe");
+            filesystem::path shimShimPath = shimExePath.replace_extension(".shim");
+
+            unpack_shim(shimExePath);
+
+            // copy shim to output path
+
+            // open shimShimPath as text file
+            // write out inputPath into it
+            // write out shimArgs into it
+            // close file
+
+            // cout that the shim was created.
+        }
+    }
 
     return exitcode;
 }
