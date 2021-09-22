@@ -2,15 +2,16 @@ Under construction.
 
 Based on [kiennq's c++ shim implementation](https://github.com/kiennq/scoop-better-shimexe)
 
-## Installation
+## Build
 
-- In a Visual Studio command prompt, run `cl.exe /nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL shim.cpp`.
-- Or using `clang++` with `clang++ shim.cpp -o shim.exe -m32 -O -std=c++17 -g`.
-- Replace any `.exe` in `scoop\shims` by `shim.exe`.
+- In a Visual Studio command prompt, run:
+```
+cl.exe /nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL shim.cpp
+rc shimgen-resources.rc
+cl.exe /nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL /EHsc shimgen.cpp shimgen-resources.res
+```
 
-An additional script, `repshims.bat`, is provided. It will replace all `.exe`s in the user's Scoop directory
-by `shim.exe`.
-
+- Replace `shimgen.exe` in your choco source code tree with the finished binary here. Don't forget to update the `shimgen.license.txt` as well.
 
 ## License
 

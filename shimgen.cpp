@@ -66,41 +66,34 @@ bool validate_path(const wstring& path)
     return true;
 }
 
-void unpack_shim(const filesystem::path& path)
+void unpack_shim_to_path(const filesystem::path& path)
 {
-    if (!filesystem::exists(path))
+    DWORD bytesWritten = 0;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    HRSRC hResource = FindResource(NULL, MAKEINTRESOURCE(IDB_EMBEDEXE), MAKEINTRESOURCE(10));
+    HGLOBAL hGlobal = LoadResource(NULL, hResource);
+    size_t exeSiz = SizeofResource(NULL, hResource); // Size of the embedded data
+    void* exeBuf = LockResource(hGlobal);
+
+    hFile = CreateFileW(path.wstring().c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE)
     {
         DWORD bytesWritten = 0;
-        HANDLE hFile = INVALID_HANDLE_VALUE;
-        HRSRC hResource = FindResource(NULL, MAKEINTRESOURCE(IDB_EMBEDEXE), MAKEINTRESOURCE(10));
-        HGLOBAL hGlobal = LoadResource(NULL, hResource);
-        size_t exeSiz = SizeofResource(NULL, hResource); // Size of the embedded data
-        void* exeBuf = LockResource(hGlobal);
-
-        hFile = CreateFileW(path.wstring().c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hFile != INVALID_HANDLE_VALUE)
-        {
-            DWORD bytesWritten = 0;
-            WriteFile(hFile, exeBuf, exeSiz, &bytesWritten, NULL);
-            CloseHandle(hFile);
-        }
-        else
-        {
-            throw "Could not unpack shim.exe file\n";
-        }
+        WriteFile(hFile, exeBuf, exeSiz, &bytesWritten, NULL);
+        CloseHandle(hFile);
     }
     else
     {
-        //Assume it exists and is valid, debug message here?
-        //validate checksum?
+        throw "Could not unpack shim.exe file\n";
     }
 
     return;
 }
 
-std::string get_utf8(const std::wstring &wstr)
+std::string get_utf8(const std::wstring& wstr)
 {
-    if (wstr.empty()) return std::string();
+    if (wstr.empty())
+        return std::string();
     int sz = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), 0, 0, 0, 0);
     std::string res(sz, 0);
     WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &res[0], sz, 0, 0);
@@ -121,9 +114,8 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
     }
 
     filesystem::path shimgenPath(filenameWChar);
-    shimgenPath = filesystem::canonical(shimgenPath);
+    shimgenPath = filesystem::weakly_canonical(shimgenPath);
     filesystem::current_path((filesystem::path(shimgenPath)).remove_filename());
-
 
     int exitcode = 0;
 
@@ -183,7 +175,7 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
     }
     else
     {
-        if ((!argsOutput) || (outputPath == L""))
+        if ((!argsOutput) || (outputPath == ""))
         {
             cerr << "An output path must be specified\n";
             exitcode = 1;
@@ -230,20 +222,14 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 
         if (exitcode == 0)
         {
-            filesystem::path unpackedShimPath = shimgenPath;
-            unpackedShimPath.replace_filename("shim.exe");
-
             filesystem::path outputShimArgsPath = outputPath;
             outputShimArgsPath.replace_extension(".shim");
 
-            unpack_shim(unpackedShimPath);
-
-            //Error checking?
-            filesystem::copy_file(unpackedShimPath, outputPath, filesystem::copy_options::overwrite_existing);
+            unpack_shim_to_path(outputPath);
 
             ofstream outputShimArgsHandle;
-            outputShimArgsHandle.open(outputShimArgsPath);
-            if (outputShimArgsHandle.fail())
+            outputShimArgsHandle.open(outputShimArgsPath, ios::out);
+            if (!outputShimArgsHandle.is_open())
             {
                 cerr << outputShimArgsPath << " cannot be be opened\n";
                 throw "Shim args file cannot be opened";
