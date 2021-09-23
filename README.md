@@ -19,9 +19,9 @@ gui = force
 
 ### Disadvantages
 
-- No support for the shims having icons
-- Creates extra `.shim` file next to each shim `.exe`.
-- Not throughly tested (yet)
+- No support for icons for the shims
+- Creates a `.shim` file next to each shim `.exe`.
+- Not thoroughly tested (yet)
 - No support for extra shim options/arguments
 
 ## Build and Install
@@ -33,7 +33,7 @@ rc shimgen-resources.rc
 cl.exe /nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL /EHsc shimgen.cpp shimgen-resources.res
 ```
 
-- Replace `shimgen.exe` in your choco source code tree with the build artifiact. Don't forget to update the `shimgen.license.txt` as well.
+- Replace `shimgen.exe` in your choco source code tree with the build artifact. Don't forget to update the `shimgen.license.txt` as well.
 
 ## TODO
 - Benchmark shim creation time and shim launching time
