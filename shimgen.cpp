@@ -35,7 +35,7 @@ bool wstring_starts_with(const wstring& checkstring, const wstring& comparestrin
 }
 
 template<typename PathType>
-void get_arg_value(const vector<wstring>& args, const size_t& currentPos, PathType& argVariable, bool& argFound)
+void get_arg_value(const vector<wstring>& args, size_t& currentPos, PathType& argVariable, bool& argFound)
 {
     size_t pos = args[currentPos].find('=');
 
@@ -48,6 +48,9 @@ void get_arg_value(const vector<wstring>& args, const size_t& currentPos, PathTy
         {
             argVariable = args[nextArg];
             argFound = true;
+            
+            // Increase iterator as the next arg was used
+            currentPos++;
         }
     }
     else
