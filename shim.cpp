@@ -9,6 +9,9 @@
 #include <optional>
 #include <memory>
 #include <vector>
+#include <cwctype>
+#include <algorithm>
+#include <iostream>
 
 #ifndef ERROR_ELEVATION_REQUIRED
 #define ERROR_ELEVATION_REQUIRED 740
@@ -88,7 +91,7 @@ std::tuple<std::wstring_p, std::wstring_p, std::wstring_p> GetShimInfo()
 
         std::wstring_view line(linebuf);
 
-        if ((line.size() < 7) || (line.substr(4, 3) != L" = "))
+        if ((line.size() < 7) || ((line.substr(4, 3) != L" = ") && (line.substr(3, 3) != L" = ")))
         {
             continue;
         }
@@ -115,7 +118,7 @@ std::tuple<std::wstring_p, std::wstring_p, std::wstring_p> GetShimInfo()
     return {path, args, gui};
 }
 
-std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstring_p& path, const std::wstring_p& args)
+std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstring_p& path, const std::wstring_p& args, const std::wstring& workingDirectory)
 {
     // Start subprocess
     STARTUPINFOW si = {};
@@ -130,7 +133,12 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
     std::unique_handle threadHandle;
     std::unique_handle processHandle;
 
-    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &si, &pi))
+    LPCWSTR workingDirectoryCSTR = nullptr;
+    if(workingDirectory != L"") {
+        workingDirectoryCSTR = workingDirectory.c_str();
+    }
+
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, workingDirectoryCSTR, &si, &pi))
     {
         threadHandle.reset(pi.hThread);
         processHandle.reset(pi.hProcess);
@@ -154,6 +162,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
             sei.lpFile = path->c_str();
             sei.lpParameters = args->c_str();
             sei.nShow = SW_SHOW;
+            sei.lpDirectory = workingDirectoryCSTR;
 
             if (!ShellExecuteExW(&sei))
             {
@@ -179,6 +188,60 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
     return {std::move(processHandle), std::move(threadHandle)};
 }
 
+bool wstring_starts_with(const std::wstring& checkstring, const std::wstring& comparestring)
+{
+    return ((checkstring.compare(0, comparestring.length(), comparestring)) == 0);
+}
+
+template<typename PathType>
+void get_arg_value(const std::vector<std::wstring>& args, size_t& currentPos, PathType& argVariable, bool& argFound)
+{
+    size_t pos = args[currentPos].find('=');
+
+    //If there is not a "=", a space was used, so check next argument in vector
+    if (pos == std::wstring::npos)
+    {
+        size_t nextArg = currentPos + 1;
+        // Short circuited check to make sure we are within vector
+        if ((nextArg < args.size()) && (args[nextArg][0] != '-'))
+        {
+            argVariable = args[nextArg];
+            argFound = true;
+
+            // Increase iterator as the next arg was used
+            currentPos++;
+        }
+    }
+    else
+    {
+        argVariable = args[currentPos].substr(pos + 1);
+        argFound = true;
+    }
+
+    return;
+}
+
+void run_help()
+{
+    std::cout << "This is a Scoop Style Shim\n";
+    std::cout << "It is a drop in replacement for RealDimensions Software's Shims\n";
+    std::cout << "\nAvailable arguments: \n";
+    std::cout << "  --shimgen-help           Prints out this message\n";
+    std::cout << "  --shimen-log             Not implemented, available for\n";
+    std::cout << "                             compatibility with RDS shims\n";
+    std::cout << "  --shimgen-waitforexit    Not implemented, available for\n";
+    std::cout << "                             compatibility with RDS shims\n";
+    std::cout << "  --shimgen-exit           Not implemented, available for\n";
+    std::cout << "                             compatibility with RDS shims\n";
+    std::cout << "  --shimgen-gui            Force shim to run as a GUI instead\n";
+    std::cout << "                             of autodetecting in the program\n";
+    std::cout << "  --shimgen-usetargetworkingdirectory=""<directory>""\n";
+    std::cout << "                             Run program from a custom\n";
+    std::cout << "                             working directory\n";
+    std::cout << "  --shimgen-noop           Do not run the shim\n";
+    std::cout << "                             TODO log information to console" << std::endl;
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     auto [path, args, gui] = GetShimInfo();
@@ -199,7 +262,73 @@ int wmain(int argc, wchar_t* argv[])
         gui.emplace();
     }
 
+    std::vector<std::wstring> cmdArgs(argv + 1, argv + argc);
+
+    bool argsLog = false;
+    bool isWindowsApp = false;
+    bool argsNoop = false;
+    std::wstring targetWorkingDirectory = L"";
+
+    for (size_t i = 0; i < cmdArgs.size(); i++)
+    {
+        std::wstring currentArg = cmdArgs[i];
+        std::transform(currentArg.begin(), currentArg.end(), currentArg.begin(), std::towlower);
+        if (currentArg[0] == '-')
+        {
+            if (wstring_starts_with(currentArg, L"--shimgen-help"))
+            {
+                run_help();
+                return 0;
+            }
+            else if (wstring_starts_with(currentArg, L"--shimgen-log"))
+            {
+                //TODO: NO-OP at the moment, todo is adding in logging
+                //get_arg_value(cmdArgs[i], i, outputPath, cmdArgsOutput);
+                cmdArgs[i].clear();
+            }
+            else if (wstring_starts_with(currentArg, L"--shimgen-waitforexit"))
+            {
+                //TODO, add logging here.
+                //This type of shim always waits for exit
+                cmdArgs[i].clear();
+            }
+            else if (wstring_starts_with(currentArg, L"--shimgen-exit"))
+            {
+                //TODO, add logging here.
+                //This type of shim always waits for exit
+                cmdArgs[i].clear();
+            }
+            else if (wstring_starts_with(currentArg, L"--shimgen-gui"))
+            {
+                isWindowsApp = true;
+                cmdArgs[i].clear();
+            }
+            else if (wstring_starts_with(currentArg, L"--shimgen-usetargetworkingdirectory"))
+            {
+                if (wstring_starts_with(currentArg, L"--shimgen-usetargetworkingdirectory=")) {
+                    targetWorkingDirectory = currentArg.substr(36, currentArg.length());
+                    cmdArgs[i].clear();
+                } else {
+                    // If usetargetworkingdirectory is not used with an equals, then the value will be in the next argument
+                    cmdArgs[i].clear();
+                    // Increment i to consume next argument
+                    i++;
+                    targetWorkingDirectory = cmdArgs[i];
+                    cmdArgs[i].clear();
+                }
+            }
+            else if (wstring_starts_with(currentArg, L"--shimgen-noop"))
+            {
+                argsNoop = true;
+                cmdArgs[i].clear();
+            }
+        }
+    }
+
+    //todo handle checking if target exists for logging
+
     auto cmd = GetCommandLineW();
+
     if (cmd[0] == L'\"')
     {
         args->append(cmd + wcslen(argv[0]) + 2);
@@ -208,8 +337,6 @@ int wmain(int argc, wchar_t* argv[])
     {
         args->append(cmd + wcslen(argv[0]));
     }
-
-    bool isWindowsApp = false;
 
     if (gui == L"force")
     {
@@ -220,6 +347,11 @@ int wmain(int argc, wchar_t* argv[])
         // Find out if the target program is a console app
         SHFILEINFOW sfi = {};
         isWindowsApp = HIWORD(SHGetFileInfoW(path->c_str(), -1, &sfi, sizeof(sfi), SHGFI_EXETYPE)) != 0;
+    }
+
+    if (argsNoop) {
+        //TODO, add logging here about noop
+        return 0;
     }
 
     if (isWindowsApp)
@@ -237,7 +369,7 @@ int wmain(int argc, wchar_t* argv[])
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
     SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
 
-    auto [processHandle, threadHandle] = MakeProcess(std::move(path), std::move(args));
+    auto [processHandle, threadHandle] = MakeProcess(std::move(path), std::move(args), targetWorkingDirectory);
     if (processHandle && !isWindowsApp)
     {
         AssignProcessToJobObject(jobHandle.get(), processHandle.get());
