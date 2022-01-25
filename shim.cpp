@@ -2,6 +2,8 @@
 #pragma comment(lib, "SHELL32.LIB")
 #include <windows.h>
 #include <stdio.h>
+#include <shlwapi.h>
+#pragma comment(lib, "Shlwapi.lib")
 
 #include <string>
 #include <string_view>
@@ -138,6 +140,10 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
     if (workingDirectory != L"")
     {
         workingDirectoryCSTR = workingDirectory.c_str();
+
+        if (!PathFileExistsW(workingDirectoryCSTR)) {
+            std::cerr << "Working directory does not exist, process may fail to start\n";
+        }
     }
 
     if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, workingDirectoryCSTR, &si, &pi))
@@ -248,22 +254,6 @@ int wmain(int argc, wchar_t* argv[])
 {
     auto [path, shimArgs, gui] = GetShimInfo();
 
-    if (!path)
-    {
-        fprintf(stderr, "Could not read shim file.\n");
-        return 1;
-    }
-
-    if (!shimArgs)
-    {
-        shimArgs.emplace();
-    }
-
-    if (!gui)
-    {
-        gui.emplace();
-    }
-
     std::vector<std::wstring> cmdArgs(argv + 1, argv + argc);
 
     bool argsLog = false;
@@ -330,18 +320,33 @@ int wmain(int argc, wchar_t* argv[])
         }
     }
 
+    if (!path)
+    {
+        fprintf(stderr, "Could not read shim file.\n");
+        return 1;
+    }
+
+    if (!shimArgs)
+    {
+        shimArgs.emplace();
+    }
+
+    if (!gui)
+    {
+        gui.emplace();
+    }
+
     if (exitImmediately && waitForExit)
     {
-        //TODO, throw
+        std::cerr << "Both waitforexit and exit cannot be passed at the same time\n";
+        return 1;
     }
 
     //todo handle checking if target exists for logging
-    // If target directory, validate that it exists
 
     if (!cmdArgs.empty())
     {
         // Add command line arguments
-
         shimArgs->append(
             L" " + std::accumulate(std::next(cmdArgs.begin()), cmdArgs.end(), cmdArgs[0], [](std::wstring a, std::wstring b) { return a + L" " + b; }));
     }
