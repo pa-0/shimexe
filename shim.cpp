@@ -135,7 +135,8 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
     std::unique_handle processHandle;
 
     LPCWSTR workingDirectoryCSTR = nullptr;
-    if(workingDirectory != L"") {
+    if (workingDirectory != L"")
+    {
         workingDirectoryCSTR = workingDirectory.c_str();
     }
 
@@ -230,13 +231,13 @@ void run_help()
     std::cout << "  --shimgen-help           Prints out this message\n";
     std::cout << "  --shimen-log             Not implemented, available for\n";
     std::cout << "                             compatibility with RDS shims\n";
-    std::cout << "  --shimgen-waitforexit    Not implemented, available for\n";
-    std::cout << "                             compatibility with RDS shims\n";
-    std::cout << "  --shimgen-exit           Not implemented, available for\n";
-    std::cout << "                             compatibility with RDS shims\n";
+    std::cout << "  --shimgen-waitforexit    Do not exit the shim until the\n";
+    std::cout << "                             program exits\n";
+    std::cout << "  --shimgen-exit           Exit the shim when the program starts\n";
     std::cout << "  --shimgen-gui            Force shim to run as a GUI instead\n";
     std::cout << "                             of autodetecting in the program\n";
-    std::cout << "  --shimgen-usetargetworkingdirectory=""<directory>""\n";
+    std::cout << "  --shimgen-usetargetworkingdirectory="
+                 "<directory>\n";
     std::cout << "                             Run program from a custom\n";
     std::cout << "                             working directory\n";
     std::cout << "  --shimgen-noop           Do not run the shim\n";
@@ -268,6 +269,8 @@ int wmain(int argc, wchar_t* argv[])
     bool argsLog = false;
     bool isWindowsApp = false;
     bool argsNoop = false;
+    bool exitImmediately = false;
+    bool waitForExit = false;
     std::wstring targetWorkingDirectory = L"";
 
     for (size_t i = 0; i < cmdArgs.size(); i++)
@@ -289,14 +292,12 @@ int wmain(int argc, wchar_t* argv[])
             }
             else if (wstring_starts_with(currentArg, L"--shimgen-waitforexit"))
             {
-                //TODO, add logging here.
-                //This type of shim always waits for exit
+                waitForExit = true;
                 cmdArgs[i].clear();
             }
             else if (wstring_starts_with(currentArg, L"--shimgen-exit"))
             {
-                //TODO, add logging here.
-                //This type of shim always waits for exit
+                exitImmediately = true;
                 cmdArgs[i].clear();
             }
             else if (wstring_starts_with(currentArg, L"--shimgen-gui"))
@@ -329,11 +330,21 @@ int wmain(int argc, wchar_t* argv[])
         }
     }
 
+    if (exitImmediately && waitForExit)
+    {
+        //TODO, throw
+    }
+
     //todo handle checking if target exists for logging
     // If target directory, validate that it exists
 
-    // Add command line arguments
-    shimArgs->append(L" " + std::accumulate(std::next(cmdArgs.begin()), cmdArgs.end(), cmdArgs[0], [](std::wstring a, std::wstring b) { return a + L" " + b; }));
+    if (!cmdArgs.empty())
+    {
+        // Add command line arguments
+
+        shimArgs->append(
+            L" " + std::accumulate(std::next(cmdArgs.begin()), cmdArgs.end(), cmdArgs[0], [](std::wstring a, std::wstring b) { return a + L" " + b; }));
+    }
 
     if (gui == L"force")
     {
@@ -368,7 +379,7 @@ int wmain(int argc, wchar_t* argv[])
     SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
 
     auto [processHandle, threadHandle] = MakeProcess(std::move(path), std::move(shimArgs), targetWorkingDirectory);
-    if (processHandle && !isWindowsApp)
+    if (processHandle && (!isWindowsApp || waitForExit) && !exitImmediately)
     {
         AssignProcessToJobObject(jobHandle.get(), processHandle.get());
 

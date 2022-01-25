@@ -37,10 +37,11 @@ cl.exe /nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL /EHsc shimgen.cpp shimge
 
 ## TODO
 - Benchmark shim creation time and shim launching time
-- Add support for shim arguments
 - Shim.exe metadata in file?
-- Support for regenerating shims, switching shims to point at alternative targets?
-
+- Testing
+- Shim Implement logging
+- Shim add in error checking (working directory exists, not both waitforexit and exit)
+- Shimgen add in path validation
 
 ## License
 
