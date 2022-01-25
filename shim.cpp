@@ -12,6 +12,7 @@
 #include <cwctype>
 #include <algorithm>
 #include <iostream>
+#include <numeric>
 
 #ifndef ERROR_ELEVATION_REQUIRED
 #define ERROR_ELEVATION_REQUIRED 740
@@ -244,7 +245,7 @@ void run_help()
 
 int wmain(int argc, wchar_t* argv[])
 {
-    auto [path, args, gui] = GetShimInfo();
+    auto [path, shimArgs, gui] = GetShimInfo();
 
     if (!path)
     {
@@ -252,9 +253,9 @@ int wmain(int argc, wchar_t* argv[])
         return 1;
     }
 
-    if (!args)
+    if (!shimArgs)
     {
-        args.emplace();
+        shimArgs.emplace();
     }
 
     if (!gui)
@@ -305,10 +306,13 @@ int wmain(int argc, wchar_t* argv[])
             }
             else if (wstring_starts_with(currentArg, L"--shimgen-usetargetworkingdirectory"))
             {
-                if (wstring_starts_with(currentArg, L"--shimgen-usetargetworkingdirectory=")) {
+                if (wstring_starts_with(currentArg, L"--shimgen-usetargetworkingdirectory="))
+                {
                     targetWorkingDirectory = currentArg.substr(36, currentArg.length());
                     cmdArgs[i].clear();
-                } else {
+                }
+                else
+                {
                     // If usetargetworkingdirectory is not used with an equals, then the value will be in the next argument
                     cmdArgs[i].clear();
                     // Increment i to consume next argument
@@ -326,17 +330,10 @@ int wmain(int argc, wchar_t* argv[])
     }
 
     //todo handle checking if target exists for logging
+    // If target directory, validate that it exists
 
-    auto cmd = GetCommandLineW();
-
-    if (cmd[0] == L'\"')
-    {
-        args->append(cmd + wcslen(argv[0]) + 2);
-    }
-    else
-    {
-        args->append(cmd + wcslen(argv[0]));
-    }
+    // Add command line arguments
+    shimArgs->append(L" " + std::accumulate(std::next(cmdArgs.begin()), cmdArgs.end(), cmdArgs[0], [](std::wstring a, std::wstring b) { return a + L" " + b; }));
 
     if (gui == L"force")
     {
@@ -349,7 +346,8 @@ int wmain(int argc, wchar_t* argv[])
         isWindowsApp = HIWORD(SHGetFileInfoW(path->c_str(), -1, &sfi, sizeof(sfi), SHGFI_EXETYPE)) != 0;
     }
 
-    if (argsNoop) {
+    if (argsNoop)
+    {
         //TODO, add logging here about noop
         return 0;
     }
@@ -369,7 +367,7 @@ int wmain(int argc, wchar_t* argv[])
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
     SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
 
-    auto [processHandle, threadHandle] = MakeProcess(std::move(path), std::move(args), targetWorkingDirectory);
+    auto [processHandle, threadHandle] = MakeProcess(std::move(path), std::move(shimArgs), targetWorkingDirectory);
     if (processHandle && !isWindowsApp)
     {
         AssignProcessToJobObject(jobHandle.get(), processHandle.get());
