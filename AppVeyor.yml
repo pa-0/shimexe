@@ -1,0 +1,6 @@
+images:
+  - Visual Studio 2017
+clone_folder: C:\appveyor-builds\shimexe
+build_script:
+  - cmd: >-
+    cl /O3 shim.c
