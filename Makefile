@@ -1,41 +1,14 @@
-CC=clang++.exe
-CFLAGS=-std=c++17 -m32
-VER=shimexe-2.2
+CPPFLAGS=/nologo /std:c++17 /DNDEBUG /MT /O2 /GF /GR- /GL /EHsc
 
-ODIR = obj
-BDIR = bin
-ADIR = archive
+all: shimgen.exe
 
-TARGET = $(BDIR)/shim.exe
-OBJ = shim.o
-OBJS = $(patsubst %,$(ODIR)/%,$(OBJ))
+shim_win.exe: shim_win.cpp shimgen.h
+	$(CPP) $(CPPFLAGS) $*.cpp
+	rm $*.obj
 
-$(TARGET): $(OBJS) | $(BDIR)
-	$(CC) -o $(TARGET) $^ $(CFLAGS) -Ofast -static
-	sha256sum $(TARGET) > $(BDIR)/checksum.sha256
-	sha512sum $(TARGET) > $(BDIR)/checksum.sha512
+shimgen.res: shimgen.rc shim_win.exe
+	$(RC) $*.rc
 
-$(ODIR)/%.o: %.cpp | $(ODIR)
-	$(CC) -c -o $@ $< $(CFLAGS) -Ofast -g
-
-$(ODIR):
-	mkdir -p $(ODIR)
-
-$(BDIR):
-	mkdir -p $(BDIR)
-
-.PHONY: clean debug zip
-
-clean:
-	rm -f $(ODIR)/*.*
-
-debug: $(OBJS) | $(BDIR)
-	$(CC) -o $(BDIR)/shim.exe $^ $(CFLAGS) -g
-
-$(ADIR):
-	mkdir -p $(ADIR)
-
-$(ADIR)/$(VER).zip: $(TARGET) | $(ADIR)
-	cd $(ADIR) && zip -j -9 $(VER).zip ../$(BDIR)/*.*
-
-zip: $(ADIR)/$(VER).zip
+shimgen.exe: shimgen.cpp shimgen.h shimgen.res
+	$(CPP) $(CPPFLAGS) $*.cpp $*.res
+	rm $*.obj

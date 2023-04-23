@@ -1,2 +1,0 @@
-#include "shimgen-resources.h"
-IDB_EMBEDEXE    RCDATA      "shim.exe"
