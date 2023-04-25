@@ -12,3 +12,7 @@ shimgen.res: shimgen.rc shim_win.exe
 shimgen.exe: shimgen.cpp shimgen.h shimgen.res
 	$(CPP) $(CPPFLAGS) $*.cpp $*.res
 	rm $*.obj
+
+clean:
+	rm shim_win.exe
+	rm shimgen.res
