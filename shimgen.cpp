@@ -144,7 +144,9 @@ Usage:  SHIMGEN [-p PATH] [-o OUTPUT] [-c ARGS] [-i ICON] [--gui] [--debug]
 
 ShimGen generates an executable 'shim' that will execute another file relative
 to its location. For additional information, execute the shim with
---shimgen-help flag. 
+--shimgen-help flag.
+
+For additional info, visit: https://github.com/jphilbert/shimgen.
 
 Options: 
     -?, --help, -h          show this help message and exit
@@ -278,8 +280,14 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
          << inputPath.filename()
          << endl;
   }
-  
+
   outputPath = filesystem::weakly_canonical(outputPath);
+
+  if (filesystem::exists(outputPath) &&
+      filesystem::equivalent(outputPath, inputPath)) {
+    cout << "ERROR - output and input must be different" << endl;
+    return 1;
+  }
   
   if (!iconPath.empty())
     cout << "WARNING - flags -i --icon not implemented, ignoring" << endl;

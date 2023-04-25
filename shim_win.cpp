@@ -183,13 +183,13 @@ void close_console() {
 // ----------------------------- Help Message ------------------------------ // 
 void run_help() {
   const char *tHelp = R"V0G0N(
-This is an application shim which is a simple pass-through layer in its
-execution. Specifically this application executes another application (typically
-named the same) whos path is embedded as a resource.
+This is an application 'shim' that will execute another application (typically
+named the same). Execute with --shimgen-NoOp to identify its target.
 
-This is a refactoring of RealDimensions Software's (RDS) Shims.
+Execute shimgen.exe -h or visit https://github.com/jphilbert/shimgen for
+additional information.
 
-Available arguments:
+Options:
     --shimgen-Help          Prints out this help message
     --shimgen-Log           Turns on diagnostic messaging. These will be either
                                 sent to the console or file depending on source
@@ -230,12 +230,16 @@ int APIENTRY WinMain(
   argv = CommandLineToArgvW(GetCommandLineW(), &argc);
   vector<wstring> cmdArgs(argv + 1, argv + argc);
 
+  DWORD   exitCode                = 0;
   bool    isWindowsApp            = false;
   bool    shimArgLog              = false;
   bool    shimArgNoop             = false;
   bool    shimArgExit             = false;
   bool    shimArgWait             = false;
   wstring shimArgWorkingDirectory = L"";
+  TCHAR   shimPath[MAX_PATH];
+  
+  GetModuleFileName(nullptr, shimPath, MAX_PATH);
 
   for (size_t i = 0; i < cmdArgs.size(); i++) {
     if      (get_cmd_arg(cmdArgs, i, L"--shimgen-help"))
@@ -261,10 +265,7 @@ int APIENTRY WinMain(
   if (shimArgLog) {
     setup_stream();
     cout << "---------- Shim Logging ----------" << endl;
-
-    TCHAR applicationPath[MAX_PATH];
-    GetModuleFileName(nullptr, applicationPath, MAX_PATH);
-    cout << "Shim Path: " << applicationPath << endl << endl;
+    cout << "Shim Path: " << shimPath << endl << endl;
 
     cout << "Command Line Arguments"  << endl;
     cout << "  GUI:     " << isWindowsApp << endl; 
@@ -280,20 +281,31 @@ int APIENTRY WinMain(
   // ------------------------- Get Shim Arguments -------------------------- // 
   wstring appPath = L"";
   wstring appArgs = L"";
+  exitCode = 1;
+  
+  if (!get_shim_info(appPath, "SHIM_PATH")) 
+    cout << "ERROR - Shim has no application path. ";
+  else if (!filesystem::exists(appPath)) 
+    cout << "ERROR - Shim application path does not exist. ";
+  else if (filesystem::equivalent(shimPath, appPath))
+    cout << "ERROR - Shim points to itself. ";
+  else
+    exitCode = 0;
 
-  if (!get_shim_info(appPath, "SHIM_PATH")) {
-    cout <<
-      "Shim has no path to application to run. Regenerate shim with ShimGen."
-         << endl;
+  if (exitCode == 1) {
+    cout << "Regenerate shim with ShimGen." << endl;
     close_console();
     return 1;
   }
 
+
   get_shim_info(appArgs, "SHIM_ARGS");
+
   
   if (!isWindowsApp)
     isWindowsApp = get_shim_info("SHIM_GUI");
 
+  
   if (shimArgLog) {
     cout << "Embedded Arguments" << endl;
     cout << "  appPath:      " << get_utf8(appPath).c_str() << endl; 
@@ -363,7 +375,7 @@ int APIENTRY WinMain(
   auto [processHandle, threadHandle] =
     MakeProcess(move(appPath), move(appArgs), shimArgWorkingDirectory);
   
-  DWORD exitCode = processHandle ? 0 : 1;
+  exitCode = processHandle ? 0 : 1;
 
   // Wait for app to finish when
   //    --> No flags
