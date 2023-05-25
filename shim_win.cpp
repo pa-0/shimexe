@@ -193,9 +193,9 @@ Options:
     --shimgen-Help          Prints out this help message
     --shimgen-Log           Turns on diagnostic messaging. These will be either
                                 sent to the console or file depending on source
-                                of execution. For files, they willbe generated
+                                of execution. For files, they will be generated
                                 with the same path (directory and file name)
-                                with extention .LOG. 
+                                with extension .LOG. 
     --shimgen-WaitForExit   Wait until the program exits to exit the shim
                                 (default setting) 
     --shimgen-Exit          Exit the shim when the program starts
@@ -295,19 +295,16 @@ int APIENTRY WinMain(
   if (exitCode == 1) {
     cout << "Regenerate shim with ShimGen." << endl;
     close_console();
-    return 1;
+    return exitCode;
   }
-
 
   get_shim_info(appArgs, "SHIM_ARGS");
 
-  
   if (!isWindowsApp)
     isWindowsApp = get_shim_info("SHIM_GUI");
 
-  
   if (shimArgLog) {
-    cout << "Embedded Arguments" << endl;
+    cout << endl << "Embedded Arguments" << endl;
     cout << "  appPath:      " << get_utf8(appPath).c_str() << endl; 
     cout << "  appArgs:      " << get_utf8(appArgs).c_str() << endl; 
     cout << "  isWindowsApp: " << isWindowsApp              << endl << endl; 
