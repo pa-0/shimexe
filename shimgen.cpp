@@ -100,9 +100,19 @@ BOOL EnumTypesFunc(HMODULE hModule, LPTSTR lpType, LONG lParam) {
   return TRUE;
 }
 
-BOOL copy_resources(filesystem::path sourcePath) {
-  HMODULE hExe = LoadLibraryW(sourcePath.c_str());
-
+BOOL copy_resources(filesystem::path sourcePath) { 
+  HMODULE hExe =
+    LoadLibraryExW(sourcePath.c_str(),
+                   NULL,
+                   LOAD_LIBRARY_AS_DATAFILE);
+  
+  if (!hExe) {
+    cout << "ERROR - could not open "
+         <<  '"' + get_utf8(sourcePath) + '"'
+         << endl;
+    return false;
+  }
+    
   EnumResourceTypes(hExe, (ENUMRESTYPEPROC)EnumTypesFunc, 0);
   
   BOOL bOut = FreeLibrary(hExe); 
@@ -144,9 +154,7 @@ Usage:  SHIMGEN [-p PATH] [-o OUTPUT] [-c ARGS] [-i ICON] [--gui] [--debug]
 
 ShimGen generates an executable 'shim' that will execute another file relative
 to its location. For additional information, execute the shim with
---shimgen-help flag.
-
-For additional info, visit: https://github.com/jphilbert/shimgen.
+--shimgen-help flag or visit: https://github.com/jphilbert/shimgen.
 
 Options: 
     -?, --help, -h          show this help message and exit
