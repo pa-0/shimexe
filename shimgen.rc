@@ -1,1 +1,31 @@
 SHIM_WIN    RCDATA      "shim_win.exe"
+
+#define VER_FILEVERSION             1,0,2,0
+#define VER_FILEVERSION_STR         "1.0.2.0\0"
+
+1 VERSIONINFO
+  FILEVERSION     VER_FILEVERSION
+  PRODUCTVERSION  VER_FILEVERSION
+  FILEOS          0x4
+  FILETYPE        0x1
+  {
+    BLOCK "StringFileInfo"
+    {    
+      BLOCK "040904E4"
+        {
+            VALUE "FileDescription", "creates a 'shim' for an executable\0"
+            VALUE "LegalCopyright",   "MIT License - \nCopyright (c) 2023 John P. Hilbert, 2021 TheCakeIsNaOH, 2019 Grégoire Geis"
+            // VALUE "CompanyName",      "abc\0"
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "InternalName",     "shimgen.exe\0"
+            VALUE "OriginalFilename", "shimgen.exe\0"
+            VALUE "ProductName",      "shimgen\0"
+            VALUE "ProductVersion",   VER_FILEVERSION_STR
+        }
+    }
+    
+    BLOCK "VarFileInfo"
+    {
+      VALUE "Translation", 0x409, 1252
+    }
+  }
