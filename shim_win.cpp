@@ -16,6 +16,8 @@ using namespace std;
 #define ERROR_ELEVATION_REQUIRED 740
 #endif
 
+#define BUFSIZE 4096
+
 // --------------------------- Process Creation ---------------------------- // 
 BOOL WINAPI CtrlHandler(DWORD ctrlType) {
   switch (ctrlType) {
@@ -51,18 +53,16 @@ tuple<unique_handle, unique_handle> MakeProcess(
     const wstring_p& path,
     const wstring_p& args,
     const wstring& workingDirectory) {
-  STARTUPINFOW        startInfo   = {};
-  PROCESS_INFORMATION processInfo = {};
+  STARTUPINFOW        startInfo     = {};
+  PROCESS_INFORMATION processInfo   = {};
   unique_handle       threadHandle;
   unique_handle       processHandle;
-  
-  // Set the Command Line
-  vector<wchar_t> cmd(path->size() + args->size() + 2);
-  wmemcpy(cmd.data(), path->c_str(), path->size());
-  cmd[path->size()] = L' ';
-  wmemcpy(cmd.data() + path->size() + 1, args->c_str(), args->size());
-  cmd[path->size() + 1 + args->size()] = L'\0';
 
+  // Set the Command Line
+  wstring cmd = path->c_str();
+  cmd += L" ";
+  cmd += args->c_str();
+  
   // Set the Working Directory
   LPCWSTR workingDirectoryCSTR = nullptr;
   if (workingDirectory != L"") {
@@ -74,7 +74,7 @@ tuple<unique_handle, unique_handle> MakeProcess(
           endl;
       }
   }
-
+  
   // Create the Process
   if (CreateProcessW(
           nullptr,                 // No module name (use command line)       
@@ -87,6 +87,7 @@ tuple<unique_handle, unique_handle> MakeProcess(
     // Set the handles
     threadHandle.reset(processInfo.hThread);
     processHandle.reset(processInfo.hProcess);
+    
     // Start the thread
     ResumeThread(threadHandle.get());
   }
@@ -265,16 +266,16 @@ int APIENTRY WinMain(
   if (shimArgLog) {
     setup_stream();
     cout << "---------- Shim Logging ----------" << endl;
-    cout << "Shim Path: " << shimPath << endl << endl;
+    cout << "Shim Path: " << '"' << shimPath << '"' << endl << endl;
 
-    cout << "Command Line Arguments"  << endl;
-    cout << "  GUI:     " << isWindowsApp << endl; 
-    cout << "  Log:     " << shimArgLog   << endl; 
-    cout << "  NoOp:    " << shimArgNoop  << endl;
-    cout << "  Exit:    " << shimArgExit  << endl; 
-    cout << "  Wait:    " << shimArgWait  << endl; 
-    cout << "  Working Directory: "
-         << get_utf8(shimArgWorkingDirectory).c_str()
+    cout << "Shim Arguments"  << endl;
+    cout << "  GUI:          " << isWindowsApp << endl; 
+    cout << "  Log:          " << shimArgLog   << endl; 
+    cout << "  NoOp:         " << shimArgNoop  << endl;
+    cout << "  Exit:         " << shimArgExit  << endl; 
+    cout << "  Wait:         " << shimArgWait  << endl; 
+    cout << "  Working Dir:  "
+         << '"' << get_utf8(shimArgWorkingDirectory).c_str() << '"'
          << endl; 
   }
   
@@ -304,10 +305,13 @@ int APIENTRY WinMain(
     isWindowsApp = get_shim_info("SHIM_GUI");
 
   if (shimArgLog) {
-    cout << endl << "Embedded Arguments" << endl;
-    cout << "  appPath:      " << get_utf8(appPath).c_str() << endl; 
-    cout << "  appArgs:      " << get_utf8(appArgs).c_str() << endl; 
-    cout << "  isWindowsApp: " << isWindowsApp              << endl << endl; 
+    cout << endl << "Embedded Data" << endl;
+    cout << "  appPath:      "
+         << '"' << get_utf8(appPath).c_str() << '"' << endl; 
+    cout << "  appArgs:      "
+         << '"' << get_utf8(appArgs).c_str() << '"' << endl; 
+    cout << "  isWindowsApp: "
+         << isWindowsApp << endl << endl; 
   }
 
   // --------------------- Final Parameter Validation ---------------------- // 
@@ -331,7 +335,7 @@ int APIENTRY WinMain(
             sizeof(sfi),
             SHGFI_EXETYPE)) != 0;
     
-    if (shimArgNoop && isWindowsApp) 
+    if (shimArgLog && isWindowsApp) 
       cout
         << "Identified to be a Windows application, "
         << "changing isWindowsApp to TRUE"
@@ -340,34 +344,37 @@ int APIENTRY WinMain(
 
   // Append additional arguments
   if (!cmdArgs.empty()) {
+    if (!appArgs.empty())
+      appArgs.append(L" ");
+    
     // Add command line arguments
-    appArgs.append(
-        L" " +
-        accumulate(next(cmdArgs.begin()),
-                   cmdArgs.end(),
-                   cmdArgs[0],
-                   [](wstring a, wstring b) {
-                          return a + L" " + b;
-                        }));
+    appArgs.append(accumulate(next(cmdArgs.begin()),
+                              cmdArgs.end(),
+                              cmdArgs[0],
+                              [](wstring a, wstring b) {
+                                return a + L" " + b;
+                              }));
   }
 
   if (shimArgLog) 
-    cout << "Full Arg List:      "
-         << get_utf8(appArgs).c_str()
+    cout << "Application Arguments: " << endl
+         << "    " 
+         << '"' << get_utf8(appArgs).c_str() << '"'
          << endl;
-  
+
   if (shimArgNoop) {
     cout << "---------- Shim Exiting: NoOp ----------" << endl;
     close_console();
     return 0;
   }
 
-  if (isWindowsApp)
+  if (isWindowsApp && !shimArgLog)
     FreeConsole();
 
   
   // ----------------------------- Execute App ----------------------------- //
-  cout << "Creating process for application" << endl;
+  if (shimArgLog)
+    cout << "Creating process for application" << endl;
 
   auto [processHandle, threadHandle] =
     MakeProcess(move(appPath), move(appArgs), shimArgWorkingDirectory);
@@ -381,7 +388,8 @@ int APIENTRY WinMain(
       ((!isWindowsApp && !shimArgWait && !shimArgExit) ||
        shimArgWait)) {
     
-    cout << "Waiting for process to complete" << endl;
+    if (shimArgLog)
+      cout << "Waiting for process to complete" << endl;
     
     // A job object allows groups of processes to be managed as a unit.
     // Operations performed on a job object affect all processes associated with
@@ -409,6 +417,10 @@ int APIENTRY WinMain(
     GetExitCodeProcess(processHandle.get(), &exitCode);
   }
 
-  cout << "---------- Shim Exiting: " << exitCode << " ----------" << endl;
+  if (shimArgLog) {
+    cout << "---------- Shim Exiting: " << exitCode << " ----------" << endl;
+    close_console();
+  }
+  
   return exitCode;
 }
