@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <wchar.h>
 #include <Windows.h>
+#include <share.h>
 
 #ifndef ERROR_ELEVATION_REQUIRED
 #  define ERROR_ELEVATION_REQUIRED 740
