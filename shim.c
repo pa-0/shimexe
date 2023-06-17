@@ -220,7 +220,8 @@ int main()
     AssignProcessToJobObject(jobHandle, pi.hProcess);
     ResumeThread(pi.hThread);
   } else {
-    if (GetLastError() == ERROR_ELEVATION_REQUIRED) {
+    DWORD error = GetLastError();
+    if (error == ERROR_ELEVATION_REQUIRED) {
       // We must elevate the process, which is (basically) impossible with
       // CreateProcess, and therefore we fallback to ShellExecuteEx,
       // which CAN create elevated processes, at the cost of opening a new separate
@@ -244,7 +245,7 @@ int main()
 
       pi.hProcess = sei.hProcess;
     } else {
-      fprintf(stderr, "Shim: Could not create process with command '%ls'.\n", cmd);
+      fprintf(stderr, "Shim: Error %lu: Could not create process with command '%ls'.\n", error, cmd);
 
       exit_code = 1;
       goto cleanup;
