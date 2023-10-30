@@ -80,7 +80,6 @@ bool get_cmd_arg(
 }
 
 
-  
 // ----------------------- Methods to Read Resources ----------------------- // 
 bool get_shim_info(wstring& argVariable, LPCSTR argString) {
   HRSRC   hRes;                 // handle/ptr. to res. info. 
@@ -91,7 +90,8 @@ bool get_shim_info(wstring& argVariable, LPCSTR argString) {
   if (hRes) {    
     hResLoad = LoadResource(NULL, hRes);
     lpResLock = LockResource(hResLoad);
-    argVariable = wstring((LPCWSTR)lpResLock, SizeofResource(NULL, hRes));
+    argVariable = wstring((LPCWSTR)lpResLock,
+                          SizeofResource(NULL, hRes) / sizeof(WCHAR));
     return true;
   }
   else
