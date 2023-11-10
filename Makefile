@@ -1,17 +1,36 @@
-CPPFLAGS=-nologo -std:c++17 -DNDEBUG -MT -O2 -GF -GR- -GL -EHsc
+CPPFLAGS = -nologo -std:c++17 -DNDEBUG -MD -O2 -GF -GR- -GL -EHsc
+HEADERS = shim_executable.h shim.h
+SHIMS = shim_gui.exe shim_console.exe
 
-all: .\bin\shim_executable.exe
+all: shim_executable.exe cleanup
 
-shim_win.exe: shim_win.cpp shim_executable.h
-	$(CPP) $(CPPFLAGS) $*.cpp
-	rm $*.obj
+.SILENT:
 
-shim_executable.res: shim_executable.rc shim_win.exe
-	$(RC) $*.rc
+# SHIMS
+$(SHIMS): $*.cpp $*.rc $(HEADERS)
+	echo Building $*.exe
+	$(RC) /nologo $*.rc
+	$(CPP) $(CPPFLAGS) $*.cpp $*.res
+	echo.
 
-.\bin\shim_executable.exe: shim_executable.cpp shim_executable.h shim_executable.res
-	$(CPP) $(CPPFLAGS) -Fe$@ $(*B).cpp $(*B).res
-# checksum $@ -t sha256 > $*.sha256
-	rm $(*B).obj
-	rm shim_win.exe
-	rm shim_executable.res
+
+# Main Application
+shim_executable.exe: $*.cpp $*.rc $*.h $(SHIMS)
+	echo Building $*.exe
+	$(RC) /nologo $*.rc
+	$(CPP) $(CPPFLAGS) $*.cpp $*.res
+	echo.
+
+
+cleanup: 
+	echo Removing intermediate files
+	rm *.obj
+	rm *.res
+	rm $(SHIMS)
+
+	echo Created checksum
+	checksum shim_executable.exe -t sha256 > shim_executable.sha256
+
+	echo Renamed and moved to .\bin
+	mv shim_executable.exe .\bin\shim_exec.exe
+	mv shim_executable.sha256 .\bin\shim_exec.sha256

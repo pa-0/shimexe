@@ -1,22 +1,24 @@
-#pragma comment(lib, "SHELL32.LIB")
-#include <shlwapi.h>
-#pragma comment(lib, "Shlwapi.lib")
+#include <optional>
+#include <numeric>
+
 #include <string>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
-#include <optional>
-#include <numeric>
+#include <shlwapi.h>
+#pragma comment(lib, "Shlwapi.lib")
+#pragma comment(lib, "SHELL32.LIB")
 
 using namespace std;
-
-#include "shimgen.h"
 
 #ifndef ERROR_ELEVATION_REQUIRED
 #define ERROR_ELEVATION_REQUIRED 740
 #endif
 
 #define BUFSIZE 4096
+
+#include "shim_resources.h"
+#include "shim_executable.h"
 
 // --------------------------- Process Creation ---------------------------- // 
 BOOL WINAPI CtrlHandler(DWORD ctrlType) {
@@ -131,104 +133,139 @@ tuple<unique_handle, unique_handle> MakeProcess(
 
 
 // ----------------------------- Logging Setup ----------------------------- //
-// I'm not content with this but it works for now
-BOOL hasConsole = FALSE;
 static ofstream outStream;
+DWORD consoleInfo = 0;
+// 0 - unchecked
+// 1 - console app                  - write to console
+// 2 - windows app  - found console - write to console
+// 3 - windows app  - no console    - write to file
 
-void setup_stream() {
-  hasConsole = AttachConsole(ATTACH_PARENT_PROCESS);
-  // NOTE: Issue with AttachConsole
-  //   Everything is normal, the output of cmd.exe and your program get
-  //   arbitrarily intermingled. Cmd.exe got first, that's common, it displayed
-  //   the command prompt before your program output got a chance. It has no
-  //   reason to display it again unless you press the Enter key. It gets a lot
-  //   worse if your program reads from the console. You'll have to start your
-  //   app with start /wait yourapp.exe to tell cmd.exe to wait. Otherwise a
-  //   good demonstration why AttachConsole() is such a bad idea.
-  //    - Hans Passant Jun 11, 2021 at 16:22
-  if(hasConsole) {
+void open_logging_stream() {
+  if(consoleInfo > 0)
+    return;
+  
+  if(AttachConsole(ATTACH_PARENT_PROCESS)) {
+    consoleInfo = 2;
     outStream = ofstream("CONOUT$", ios::out);
     outStream << endl;
   }
-  else {
+  else if(GetLastError() == ERROR_INVALID_HANDLE) {
+    consoleInfo = 3;
     wchar_t applicationPath[MAX_PATH];
     const auto applicationPathSize = GetModuleFileNameW(
         nullptr, applicationPath, MAX_PATH);
   
     filesystem::path logPath = applicationPath;
-    logPath.replace_extension(".log");
-
-    outStream.open(logPath);
+    logPath.replace_extension(".shim.log");
+    outStream.open(logPath, ios::out | ios::trunc);
   }
+  else {
+    consoleInfo = 1;
+    return;
+  };
   
   cout.rdbuf(outStream.rdbuf());
 }
 
-void close_console() {
+void close_logging_stream() {
   // Cleanup and Close the Stream
-  if(hasConsole) {
+  switch(consoleInfo) {
+  case 2:
+    // Mimics a console application to some extent...
+    // ...from cmd.exe console, appears to add an extra new line
+    // ...from powershell.exe, does not move the cursor (returns to position
+    // prior to any output)
     DWORD entityWritten;
     INPUT_RECORD inputs;
     inputs.EventType = KEY_EVENT;
-    inputs.Event = { true, 0, 0, 0, VK_RETURN, 0 };
-    WriteConsoleInputA(GetStdHandle(STD_INPUT_HANDLE),
+    inputs.Event.KeyEvent.bKeyDown = TRUE;
+    inputs.Event.KeyEvent.dwControlKeyState = 0;
+    inputs.Event.KeyEvent.uChar.UnicodeChar = '\r';
+    inputs.Event.KeyEvent.wRepeatCount = 1;
+    // inputs.Event.KeyEvent.wVirtualKeyCode = VK_RETURN;
+    // inputs.Event.KeyEvent.wVirtualScanCode = MapVirtualKey(VK_RETURN, 0);
+    WriteConsoleInput(GetStdHandle(STD_INPUT_HANDLE),
                        &inputs, 1, &entityWritten);
-
+    
     FreeConsole();
-  }
-  else 
+    break;
+    
+  case 3:
     outStream.close();
+    break;
+  }
 }
 
 
 // ----------------------------- Help Message ------------------------------ // 
 void run_help() {
   const char *tHelp = R"V0G0N(
+==============================
+INFO
+==============================
 This is an application 'shim' that will execute another application (typically
-named the same). Execute with --shimgen-NoOp to identify its target.
+named the same located elsewhere). Execute with --shim-NoOp to identify its
+target.
 
-Execute shimgen.exe -h or visit https://github.com/jphilbert/shimgen for
-additional information.
+Execute SHIM_EXECUTABLE -h or visit
+https://github.com/jphilbert/shim_executable for additional information.
 
-Options:
-    --shimgen-Help          Prints out this help message
-    --shimgen-Log           Turns on diagnostic messaging. These will be either
-                                sent to the console or file depending on source
-                                of execution. For files, they will be generated
-                                with the same path (directory and file name)
-                                with extension .LOG. 
-    --shimgen-WaitForExit   Wait until the program exits to exit the shim
-                                (default setting) 
-    --shimgen-Exit          Exit the shim when the program starts
-    --shimgen-GUI           Force shim to run as a GUI instead of auto-detecting
-                                in the program. This will a exit the shim when
-                                the program starts unless --shimgen-WaitForExit
-                                is set explicitly. 
-    --shimgen-UseTargetWorkingDirectory=<directory>
-                                Run program from a custom working directory. 
-    --shimgen-NoOp          Turns on diagnostic messaging but does not run the
-                                shim 
+==============================
+ARGUMENTS
+==============================
+The following arguments can be passed to a shim and are not case-sensitive.
+Each have an equivilent shimgen alias for Chocolately compatibility.
+
+    --shim-Help     Shows this help menu and exits without running the target
+
+    --shim-Log      Turns on diagnostic messaging in the console. If a windows
+                        application executed without a console, a file (<shim
+                        path>.SHIM.LOG) will be generated instead.
+                        (alias --shimgen-log)
+
+    --shim-Wait     Explicitly tell the shim to wait for target to exit. Useful
+                        when something is calling a GUI and wanting to block
+                        command line programs. This is the default behavior
+                        unless the shim was created with the --GUI flag. Cannot
+                        be used with --shim-Exit or --shim-GUI.
+                        (alias --shimgen-waitforexit)
+
+    --shim-Exit     Explicitly tell the shim to exit immediately after creating
+                        the application process. This is the default behavior
+                        when the shim was created with the --GUI flag. Cannot
+                        be used with --shim-Wait.
+                        (alias --shimgen-exit)
+
+    --shim-GUI      Explicitly behave as if the target is a GUI application.
+                        This is helpful in situations where the package did not
+                        have a proper .gui file. This technically has the same
+                        effect as --shim-Exit and is kept for legacy purposes.
+                        (alias --shimgen-gui)
+
+    --shim-Dir DIRECTORY
+                    Set the working directory to <directory> or the target path
+                        if omitted. By default the application will start in
+                        the have the current drive and directory as the calling
+                        process. Useful when programs need to be running from
+                        where they are located (usually indicates programs that
+                        have issues being run globally).
+                        (alias --shimgen-UseTargetWorkingDirectory)
+
+    --shim-NoOp     Executes the shim without calling the target application.
+                        Logging is implicitly turned on.
+                        (alias --shimgen-noop)
 )V0G0N";
 
-  setup_stream();
+  open_logging_stream();
   cout << tHelp << endl;
-  close_console();
+  close_logging_stream();
   exit(0);
 }
 
 
-// ------------------------------------------------------------------------- //
-// MAIN METHOD                                                               // 
-// ------------------------------------------------------------------------- //
-int APIENTRY WinMain(
-    HINSTANCE hInst, HINSTANCE hInstPrev,
-    PSTR cmdline, int cmdshow) {
-
-  // --------------------- Get Command Line Arguments ---------------------- // 
-  LPWSTR *argv;
-  int argc;
-  
-  argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+// ----------------------------- Main Function ----------------------------- // 
+int shim(int argc, wchar_t* argv[]) {
+    // --------------------- Get Command Line Arguments ---------------------- // 
   vector<wstring> cmdArgs(argv + 1, argv + argc);
 
   DWORD   exitCode                = 0;
@@ -243,104 +280,124 @@ int APIENTRY WinMain(
   GetModuleFileName(nullptr, shimPath, MAX_PATH);
 
   for (size_t i = 0; i < cmdArgs.size(); i++) {
-    if      (get_cmd_arg(cmdArgs, i, L"--shimgen-help"))
+    if      (get_cmd_arg(cmdArgs, i, L"--shim-help") ||
+             get_cmd_arg(cmdArgs, i, L"--shimgen-help")) 
       run_help();
-    else if (get_cmd_arg(cmdArgs, i, L"--shimgen-gui"))
+    else if (get_cmd_arg(cmdArgs, i, L"--shim-gui") ||
+             get_cmd_arg(cmdArgs, i, L"--shimgen-gui"))
       isWindowsApp      = true;
-    else if (get_cmd_arg(cmdArgs, i, L"--shimgen-log"))
+    else if (get_cmd_arg(cmdArgs, i, L"--shim-log") ||
+             get_cmd_arg(cmdArgs, i, L"--shimgen-log"))
       shimArgLog        = true;
-    else if (get_cmd_arg(cmdArgs, i, L"--shimgen-noop"))
-      shimArgNoop       = true;
-    else if (get_cmd_arg(cmdArgs, i, L"--shimgen-exit"))
+    else if (get_cmd_arg(cmdArgs, i, L"--shim-noop") ||
+             get_cmd_arg(cmdArgs, i, L"--shimgen-noop"))
+      shimArgNoop = shimArgLog = true;
+    else if (get_cmd_arg(cmdArgs, i, L"--shim-exit") ||
+             get_cmd_arg(cmdArgs, i, L"--shimgen-exit"))
       shimArgExit       = true;
-    else if (get_cmd_arg(cmdArgs, i, L"--shimgen-waitforexit"))
+    else if (get_cmd_arg(cmdArgs, i, L"--shim-wait") ||
+             get_cmd_arg(cmdArgs, i, L"--shimgen-waitforexit") )
       shimArgWait       = true;
     else
       get_cmd_arg(cmdArgs, i, shimArgWorkingDirectory,
-                    L"--shimgen-usetargetworkingdirectory");
+                  L"--shim-dir") ||
+      get_cmd_arg(cmdArgs, i, shimArgWorkingDirectory,
+                  L"--shimgen-usetargetworkingdirectory");
   }    
 
-  if (shimArgNoop)
-    shimArgLog = true;
-
   if (shimArgLog) {
-    setup_stream();
-    cout << "---------- Shim Logging ----------" << endl;
-    cout << "Shim Path: " << '"' << shimPath << '"' << endl << endl;
+    open_logging_stream();
+    cout << "---------- Shim Info ----------" << endl;
+    cout << "Shim Path: "  << endl;
+    cout << "  " << shimPath << endl;
+    cout << "  " << "built using Shim Executable - v"
+         << VER_FILEVERSION_STR << endl << endl;
 
-    cout << "Shim Arguments"  << endl;
+    cout << "Shim CL Parameters:" << endl;
     cout << "  GUI:          " << isWindowsApp << endl; 
     cout << "  Log:          " << shimArgLog   << endl; 
     cout << "  NoOp:         " << shimArgNoop  << endl;
     cout << "  Exit:         " << shimArgExit  << endl; 
     cout << "  Wait:         " << shimArgWait  << endl; 
-    cout << "  Working Dir:  "
-         << '"' << get_utf8(shimArgWorkingDirectory).c_str() << '"'
-         << endl; 
+    cout << "  Working Directory: " << endl; 
+    cout << "    " << get_utf8(shimArgWorkingDirectory).c_str()
+         << endl << endl;
   }
+
+  shimArgExit = shimArgExit || isWindowsApp;
+
+  if (shimArgExit && shimArgWait) {    
+    open_logging_stream();
+    cout << "ERROR - SHIM-WAIT cannot be used with SHIM-EXIT or SHIM-GUI"
+         << endl;
+    close_logging_stream();
+    return 1;
+  }
+
   
   // ------------------------- Get Shim Arguments -------------------------- // 
-  wstring appPath = L"";
-  wstring appArgs = L"";
-  exitCode = 1;
+  wstring appPath   = L"";
+  wstring appArgs   = L"";
+  wstring shimType  = L"";
+  exitCode          = 1;
   
-  if (!get_shim_info(appPath, "SHIM_PATH")) 
+  if (!get_shim_info(appPath, "SHIM_PATH")) { 
+    open_logging_stream();
     cout << "ERROR - Shim has no application path. ";
-  else if (!filesystem::exists(appPath)) 
+    cout << "Regenerate shim." << endl;
+    close_logging_stream();
+    return exitCode;
+  }
+  else if (!filesystem::exists(appPath)) {
+    open_logging_stream();
     cout << "ERROR - Shim application path does not exist. ";
-  else if (filesystem::equivalent(shimPath, appPath))
+    cout << "Regenerate shim." << endl;
+    close_logging_stream();
+    return exitCode;
+  }
+  else if (filesystem::equivalent(shimPath, appPath)) {
+    open_logging_stream();
     cout << "ERROR - Shim points to itself. ";
+    cout << "Regenerate shim." << endl;
+    close_logging_stream();
+    return exitCode;
+  }
   else
     exitCode = 0;
 
-  if (exitCode == 1) {
-    cout << "Regenerate shim with ShimGen." << endl;
-    close_console();
-    return exitCode;
-  }
-
   get_shim_info(appArgs, "SHIM_ARGS");
 
-  if (!isWindowsApp)
-    isWindowsApp = get_shim_info("SHIM_GUI");
+  get_shim_info(shimType, "SHIM_TYPE");
 
   if (shimArgLog) {
-    cout << endl << "Embedded Data" << endl;
+    cout << "Embedded Data" << endl;
     cout << "  appPath:      "
          << '"' << get_utf8(appPath).c_str() << '"' << endl; 
     cout << "  appArgs:      "
          << '"' << get_utf8(appArgs).c_str() << '"' << endl; 
-    cout << "  isWindowsApp: "
-         << isWindowsApp << endl << endl; 
+    cout << "  shimType:     "
+         << get_utf8(shimType).c_str() << endl << endl; 
   }
 
+  
   // --------------------- Final Parameter Validation ---------------------- // 
-  if (shimArgExit && shimArgWait) {
-    cout
-      << "Both --SHIMGEN-WAITFOREXIT and --SHIMGEN-EXIT cannot "
-      << "be passed at the same time"
-      << endl;
-    close_console();
-    return 1;
+  if (shimArgLog) {
+    if (shimType == L"CONSOLE") {
+      cout <<
+        "Console application, waiting for process to finish by default";
+      if (shimArgExit) 
+        cout << ",\n BUT asked to exit immediately after starting";
+    }
+    else { 
+      cout << "GUI application, exiting immediately by default";
+      if (shimArgWait) 
+        cout << ",\n BUT asked to wait for process to finish";
+    }
+    cout << endl << endl;
   }
 
-  // Check if its *actually* a Windows application
-  if (!isWindowsApp) {
-    SHFILEINFOW sfi = {};
-    isWindowsApp = HIWORD(
-        SHGetFileInfoW(
-            appPath.c_str(),
-            -1,
-            &sfi,
-            sizeof(sfi),
-            SHGFI_EXETYPE)) != 0;
-    
-    if (shimArgLog && isWindowsApp) 
-      cout
-        << "Identified to be a Windows application, "
-        << "changing isWindowsApp to TRUE"
-        << endl;
-  }
+  if (shimType == L"CONSOLE")
+    shimArgWait = !shimArgExit;
 
   // Append additional arguments
   if (!cmdArgs.empty()) {
@@ -357,19 +414,14 @@ int APIENTRY WinMain(
   }
 
   if (shimArgLog) 
-    cout << "Application Arguments: " << endl
-         << "    " 
-         << '"' << get_utf8(appArgs).c_str() << '"'
-         << endl;
+    cout << "Full list of arguments passing to application: " << endl
+         << "  " << get_utf8(appArgs).c_str() << endl;
 
   if (shimArgNoop) {
     cout << "---------- Shim Exiting: NoOp ----------" << endl;
-    close_console();
+    close_logging_stream();
     return 0;
   }
-
-  if (isWindowsApp && !shimArgLog)
-    FreeConsole();
 
   
   // ----------------------------- Execute App ----------------------------- //
@@ -382,12 +434,7 @@ int APIENTRY WinMain(
   exitCode = processHandle ? 0 : 1;
 
   // Wait for app to finish when
-  //    --> No flags
-  //    --> Wait flag
-  if (processHandle &&
-      ((!isWindowsApp && !shimArgWait && !shimArgExit) ||
-       shimArgWait)) {
-    
+  if (processHandle && shimArgWait) {
     if (shimArgLog)
       cout << "Waiting for process to complete" << endl;
     
@@ -419,7 +466,7 @@ int APIENTRY WinMain(
 
   if (shimArgLog) {
     cout << "---------- Shim Exiting: " << exitCode << " ----------" << endl;
-    close_console();
+    close_logging_stream();
   }
   
   return exitCode;

@@ -1,30 +1,27 @@
 # Path of Chocolatey ShimGen
-$SG_CHO_path = Join-Path $env:ChocolateyInstall 'tools'
+$shimgen_path   = Join-Path $env:ChocolateyInstall 'tools'
 
-# Path of ShimGen Install
-$SG_JPH_path = Get-ToolsLocation
-$SG_simgen_path = Join-Path $env:ChocolateyInstall 'lib\shimgen'
-$SG_simgen_backup_path = Join-Path $SG_simgen_path 'bak'
+# Path of Shim Executable Install
+$exe_name       = "shim_exec.exe"
+$app_path       = "$env:ChocolateyInstall\lib\shim_executable"
 
 # Check if Backup Exists
-if (Test-Path $SG_simgen_backup_path) {
-    Remove-Item "$SG_CHO_path\shimgen.exe"
-    Remove-Item "$SG_CHO_path\shimgen.license.txt"
-    Write-Host "Removed replaced shimgen.exe in $SG_CHO_path"
+if (Test-Path "$shimgen_path\shimgen.exe.bak") {
+    Remove-Item "$shimgen_path\shimgen.exe"
+    Remove-Item "$shimgen_path\shimgen.license.txt"
+    Write-Host "Removed replaced shimgen.exe in $shimgen_path"
     
-    Move-Item "$SG_simgen_backup_path\shimgen.exe" $SG_CHO_path
-    Move-Item "$SG_simgen_backup_path\shimgen.license.txt" $SG_CHO_path
-    Remove-Item $SG_simgen_backup_path
-    Write-Host "Restored backup shimgen.exe from $SG_simgen_backup_path"
+    Rename-Item "$shimgen_path\shimgen.exe.bak" "shimgen.exe"
+    Rename-Item "$shimgen_path\shimgen.license.txt.bak" "shimgen.license.txt"
+    Write-Host "Restored backup shimgen.exe"
 }
 
 else {
-    $null = New-Item $SG_simgen_backup_path -ItemType Directory
-    Move-Item "$SG_CHO_path\shimgen.exe" $SG_simgen_backup_path
-    Move-Item "$SG_CHO_path\shimgen.license.txt" $SG_simgen_backup_path
-    Write-Host "Backed up shimgen.exe to $SG_simgen_backup_path"
+    Rename-Item "$shimgen_path\shimgen.exe" "shimgen.exe.bak"
+    Rename-Item "$shimgen_path\shimgen.license.txt" "shimgen.license.txt.bak"
+    Write-Host "Backed up shimgen.exe"
     
-    Copy-Item "$SG_JPH_path\shimgen.exe" "$SG_CHO_path\shimgen.exe"
-    Copy-Item "$SG_simgen_path\LICENSE" "$SG_CHO_path\shimgen.license.txt"
-    Write-Host "Replaced shimgen.exe in $SG_CHO_path from $SG_JPH_path"
+    Copy-Item "$app_path\$exe_name" "$shimgen_path\shimgen.exe"
+    Copy-Item "$app_path\LICENSE" "$shimgen_path\shimgen.license.txt"
+    Write-Host "Replaced shimgen.exe in $shimgen_path from $SG_bin_path"
 }

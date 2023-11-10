@@ -1,23 +1,28 @@
 #include <windows.h>
-#include <string>
 #include <vector>
 #include <exception>
+
+#include <string>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <shlwapi.h>
 #pragma comment(lib, "Shlwapi.lib")
+#pragma comment(lib, "SHELL32.LIB")
 
 using namespace std;
 
-#include "shimgen.h"
+#include "shim_resources.h"
+#include "shim_executable.h"
 
 
 // ------------------------- Copy Shim Executable -------------------------- // 
-void unpack_shim_to_path(const filesystem::path& path, LPCSTR lpName) {
+BOOL unpack_shim_to_path(const filesystem::path& path, wstring resName) {
   DWORD   bytesWritten = 0;
   HANDLE  hFile        = INVALID_HANDLE_VALUE;
-  HRSRC   hResource    = FindResource(NULL, lpName, RT_RCDATA);
+  HRSRC   hResource    = FindResource(NULL,
+                                      get_utf8(resName).c_str(),
+                                      RT_RCDATA);
   HGLOBAL hGlobal      = LoadResource(NULL, hResource);
   size_t  exeSiz       = SizeofResource(NULL, hResource); 
   void*   exeBuf       = LockResource(hGlobal);
@@ -31,15 +36,10 @@ void unpack_shim_to_path(const filesystem::path& path, LPCSTR lpName) {
     DWORD bytesWritten = 0;
     WriteFile(hFile, exeBuf, exeSiz, &bytesWritten, NULL);
     CloseHandle(hFile);
-    cout << "INFO - created shim, "
-         << get_utf8(path) << ", from "
-         << lpName << endl;
-  }
-  else {
-    throw "ERROR - could not unpack shim\n";
+    return true;
   }
 
-  return;
+  return false;
 }
 
 
@@ -61,6 +61,7 @@ BOOL EnumLangsFunc(HMODULE hModule, LPCTSTR lpType, LPCTSTR lpName,
       lpResLock,                        // ptr to resource info
       SizeofResource(hModule, hRes));   // size of resource info
 
+
   cout << "INFO - copied ";
   
   if (lpType == RT_ICON)
@@ -80,6 +81,8 @@ BOOL EnumLangsFunc(HMODULE hModule, LPCTSTR lpType, LPCTSTR lpName,
 
   return TRUE;
 }
+
+
 
 BOOL EnumNamesFunc(HMODULE hModule, LPCTSTR lpType, LPTSTR lpName,
                    LONG lParam) {
@@ -107,7 +110,7 @@ BOOL copy_resources(filesystem::path sourcePath) {
                    LOAD_LIBRARY_AS_DATAFILE);
   
   if (!hExe) {
-    cout << "ERROR - could not open "
+    cerr << "ERROR - could not open "
          <<  '"' + get_utf8(sourcePath) + '"'
          << endl;
     return false;
@@ -117,7 +120,7 @@ BOOL copy_resources(filesystem::path sourcePath) {
   
   BOOL bOut = FreeLibrary(hExe); 
   if (!bOut)
-    cout << "ERROR - could not free application library" << endl;
+    cerr << "ERROR - could not free application library" << endl;
 
   return bOut;
 }
@@ -134,12 +137,12 @@ BOOL add_shim_argument (HANDLE resource, LPCSTR name, wstring arg) {
       lpArg,
       arg.size() * sizeof(wchar_t));
   
-  if (bUpdate)
+  if (!bUpdate)
+    cerr << "ERROR - failed to add " << name << endl;
+  else 
     cout << "INFO - added resource "
          << name << " = "
          << get_utf8(arg) << endl;
-  else
-    cout << "ERROR - failed to add " << name << endl;
   
   return bUpdate;
 }
@@ -148,33 +151,117 @@ BOOL add_shim_argument (HANDLE resource, LPCSTR name, wstring arg) {
 // ----------------------------- Help Message ------------------------------ // 
 void run_help() {
   const char *tHelp = R"V0G0N(
-Usage:  SHIMGEN [-p PATH] [-o OUTPUT] [-c ARGS] [-i ICON] [--gui] [--debug]
-        SHIMGEN PATH [options]
-        SHIMGEN -h
+    SHIM_EXEC [-h | -?]
+    SHIM_EXEC PATH [OUTPUT] [-c ARGS] [-i ICON] [--gui] [--debug]
+    SHIM_EXEC -p PATH [...]
+    SHIM_EXEC --path=PATH [...]
 
-ShimGen generates an executable 'shim' that will execute another file relative
-to its location. For additional information, execute the shim with
---shimgen-help flag or visit: https://github.com/jphilbert/shimgen.
 
-Options: 
-    -?, --help, -h          show this help message and exit
-    -p, --path PATH        the path to the executable. Can be relative or
-                                absolute. If the first argument is not a path,
-                                this argument is required. 
-    -o, --output OUTPUT    path to the shim to create. By default, will
-                                create a shim in the current directory with
-                                the same name as the executable. 
-    -c, --command ARGS     extra arguments the shim should pass to the original
-                                executable. 
-    -i, --iconpath ICON    UNIMPLEMENTED: Path to the executable for resolving
-                                the icon. Can be relative or absolute (suggest
-                                absolute).
-    --gui                   force shim to launch app as GUI executable and it
-                                should not wait for it to finish execution.
-    --debug                 this instructs ShimGen to write out all messages.
+==============================
+INFO
+==============================
+Generates a 'shim' file that has the sole purpose of executing another file,
+similar to a shortcut, yet is a full fledged executable. During creation, the
+resources of the source executable such as version info and icons are copied to
+the shim. In addition to the source path, specific command line arguments can
+be embedded and hence editable by a resource editor (e.g.
+https://www.angusj.com/resourcehacker).
+
+One specific option to take note of is denoting if the source application has a
+GUI. Typically, this simply denotes if the shim process should end immediately
+after starting the process for the source or to wait (these two options are
+also selectable in the shim). In either case, the shim, originally built as a
+console application, will utilize the current console when executed from the
+command line. Otherwise it will spawn a console window to generate the child
+process for the source executable. For GUI applications, where waiting is
+unneeded, this console is immediately destroyed, albeit still noticeable. To
+remedy this adverse effect, the --GUI option generates a shim built with the
+GUI subsystem as opposed to the console subsystem. This in effect removes the
+creation of a console for GUI source applications.
+
+Shims created with and without the --GUI option still include the options to
+wait or exit immediately and for the most part are indistinguishable. One
+important yet practical difference is that GUI shims by default will exit
+immediately after creating its child process whereas console shims will default
+to wait. Of course GUI shims can be called from a console and flagged to wait
+which should function similarly to console shims. Issues only arise if GUI
+shims are called with any type of console logging turned on (i.e. --shim-help
+or --shim-log). The type of CLI (e.g., powershell, cmd.exe, etc.) appears to
+impact the output. If run outside of a console, in which case a console would
+need to be created for the output stream, the shim instead writes to a
+.SHIM.LOG file with the same path.
+
+For additional information, execute the shim with --shim-help flag or visit
+https://github.com/jphilbert/shim_executable.
+
+
+==============================
+EXAMPLES
+==============================
+The following all have the same behavior of creating a shim, APP.EXE, in the
+working directory, C:\WORK\DIR:
+
+    SHIM_EXEC --output=app.exe --path=..\app.exe
+    
+    SHIM_EXEC -o app.exe -p "C:\WORK\DIR\app.exe"
+    
+    SHIM_EXEC -p C:\WORK\DIR\app.exe
+    
+    SHIM_EXEC ..\app.exe
+
+You cannot create a shim to itself. This will generate an error:
+    SHIM_EXEC app.exe
+
+however this will not:
+    SHIM_EXEC app.exe app_shim.exe
+
+
+==============================
+ARGUMENTS
+==============================
+The application accepts the following arguments and they are not
+case-sensitive. Argument flags can be shortened to a single dash and initial
+letter (except for --GUI and --DEBUG) and values can be separated by either a
+space or equal sign from its flag. Since PATH is required, it need not be
+denoted by a flag if it is the first argument. Similarly, if the second
+argument is also not denoted by a flag, it will be assumed to be OUTPUT.
+
+    --help              Show this help message and exit.
+
+    --path PATH         The path to the executable to shim. This can be a
+                            relative path however it will be converted to an
+                            absolute path before creation.
+
+    --output OUTPUT     The path to the shim to create. If only a valid
+                            directory is given, the name of the executable is
+                            used for the shim. If omitted completely, the
+                            current directory with the executable name is used.
+                            This cannot be equal to PATH.
+
+    --command ARGS      Additional arguments the shim should pass to the
+                            original executable automatically. Should be quoted
+                            for multiple arguments.
+
+    --iconpath ICON     [UNIMPLEMENTED] Path to a file to use for the shim's
+                            icon. By default, the executable's icon resources
+                            are used.
+
+    --gui               Explicitly sets shim to be created using the GUI or
+    --console               console subsystem. GUI shims exit as soon as the
+                            child process for the executable is created where
+                            as console shims will wait. If neither is set, by
+                            default the subsystem will be infered by the
+                            executable, thus these options likely would be need
+                            only for special cases.
+
+    --debug             Print additional information when creating the shim to
+                            the console.
 )V0G0N";
-
-  cout << tHelp << endl;
+  cout.clear();
+  cout << "==============================" << endl
+       << "Shim Executable - v" << VER_FILEVERSION_STR << endl
+       << "=============================="
+       << tHelp << endl;
   exit(0);
 }
 
@@ -183,7 +270,7 @@ Options:
 // MAIN METHOD                                                               // 
 // ------------------------------------------------------------------------- //
 int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
-  if (argc <= 1) {
+if (argc <= 1) {
     cerr
       << "At least one argument is required. Run with -h for more information."
       << endl;
@@ -193,16 +280,22 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
   vector<wstring> cmdArgs(argv + 1, argv + argc);
   
   int     exitcode    = 0;
-  bool    argsGui     = false;
-  bool    argsDebug   = false;
+  wstring shimType    = L"";
   wstring shimArgs    = L"";
   filesystem::path outputPath, inputPath, iconPath;
 
-  // ----------------------- Parse Command Arguments ----------------------- // 
-  if (cmdArgs[0][0] != '-')
+  cout.setstate(ios::failbit);  // start with no cout off
+  
+  // ----------------------- Parse Command Arguments ----------------------- //
+  // Check for positional arguments
+  if (cmdArgs[0][0] != '-') {
     inputPath = cmdArgs[0];
+    if (cmdArgs[1][0] != '-')
+      outputPath = cmdArgs[1];
+  }
 
-  for (size_t i = !(inputPath.empty());
+  // Loop over optional arguments (skipping positionals)
+  for (size_t i = !(inputPath.empty()) + !(outputPath.empty());
        i < cmdArgs.size();
        i++) {
     // Help
@@ -213,11 +306,15 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
     
     // Force GUI
     else if (get_cmd_arg(cmdArgs, i, L"--gui")) 
-      argsGui = true;
-    
+      shimType = L"GUI";
+
+    // Force Console
+    else if (get_cmd_arg(cmdArgs, i, L"--console")) 
+      shimType = L"CONSOLE";
+
     // Debug Info
     else if (get_cmd_arg(cmdArgs, i, L"--debug"))
-      argsDebug = true;
+      cout.clear();
     
     else if (
     // Get Output Path
@@ -233,47 +330,74 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
              get_cmd_arg(cmdArgs, i, shimArgs, L"-c") ||
              get_cmd_arg(cmdArgs, i, shimArgs, L"--command")))
       
-      wcerr << L"WARNING - invalid argument, "
+      wcout << L"WARNING - invalid argument, "
             << cmdArgs[i]
             << ", skipping"
             << endl;
   }
 
-
-  // Validate Input Path
+  // ------------------------- Validate Arguments -------------------------- // 
+  // Input Path
+  DWORD execType;
   exitcode = 1;
   if (inputPath.empty())
     cerr << "ERROR - "
          << "a source executable must be specified."
          << endl;
   else if (!filesystem::exists(inputPath)) 
-    cerr << "ERROR - "
+    cerr << "ERROR - file, "
          << get_utf8(inputPath)
-         << " does not exists."
+         << ", does not exists."
          << endl;
   else if (!filesystem::is_regular_file(inputPath)) 
-    cerr << "ERROR - "
-         << get_utf8(inputPath)
-         << " is not a regular file."
+    cerr << "ERROR - file, "
+         << get_utf8(inputPath.filename())
+         << ", is not a regular file."
          << endl;
-  else if (inputPath.extension() != ".exe") 
-    cerr << "ERROR - "
-         << get_utf8(inputPath)
-         << " is not an executable"
+  else if ((execType =
+            SHGetFileInfoW(inputPath.c_str(), NULL, NULL, NULL,
+                           SHGFI_EXETYPE)) == 0)
+    cerr << "ERROR - file, "
+         << get_utf8(inputPath.filename())
+         << ", is not an executable"
          << endl;
-  else {
-    inputPath = filesystem::weakly_canonical(inputPath);
-    cout << "INFO - Source Application: "
-         << get_utf8(inputPath)
-         << endl;
+  else
     exitcode = 0;
-  }
 
-  if (exitcode != 0)
+  if (exitcode != 0) 
     return exitcode;
+  
+  inputPath = filesystem::weakly_canonical(inputPath);
+  
+  cout << "INFO - Source Application: "
+       << get_utf8(inputPath)
+       << endl;
+
+  cout << "INFO -     Type: ";
+    
+  if (HIWORD(execType) != 0)
+    cout << "Windows GUI application";
+  else if (LOWORD(execType) == 0x5A4D)
+    cout << "MS-DOS application";
+  else
+    cout << "Windows Console application (or .bat)";    
+  cout << endl;
+
+  cout << "INFO - Shim Type ";
+  if (shimType == L"") {
+    if (HIWORD(execType) != 0)
+      shimType = L"GUI";
+    else
+      shimType = L"CONSOLE";
+    cout << "implicitly set to " << get_utf8(shimType)
+         << " (auto detected)" << endl;
+  }
+  else
+    cout << "explicitly set to " << get_utf8(shimType)
+         << " (command argument)" << endl;
 
   
-  // Validate Output Path
+  // Output Path
   if (outputPath.empty()) {
     outputPath = filesystem::current_path();
     outputPath /= inputPath.filename();
@@ -281,7 +405,7 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
          << get_utf8(outputPath)
          << endl;
   }
-
+  
   if (filesystem::is_directory(outputPath)) {
     outputPath /= inputPath.filename();
     cout << "WARNING - only output directory was specified, appending "
@@ -291,21 +415,38 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
 
   outputPath = filesystem::weakly_canonical(outputPath);
 
-  if (filesystem::exists(outputPath) &&
-      filesystem::equivalent(outputPath, inputPath)) {
-    cout << "ERROR - output and input must be different" << endl;
-    return 1;
-  }
+  exitcode = 1;
+  if (!outputPath.parent_path().empty() &&
+      !filesystem::is_directory(outputPath.parent_path())) 
+    cerr << "ERROR - output directory, " 
+         << outputPath.parent_path()
+         << ", does not exist"
+         << endl;
+  else if (filesystem::exists(outputPath) &&
+           filesystem::equivalent(outputPath, inputPath)) 
+    cerr << "ERROR - output and input must be different" << endl;
+  else
+    exitcode = 0;
   
+  if (exitcode != 0)
+    return exitcode;
+
+  
+  // Icon Path
   if (!iconPath.empty())
     cout << "WARNING - flags -i --icon not implemented, ignoring" << endl;
 
-  if (argsDebug)
-    cout << "WARNING - flag --debug not implemented, ignoring" << endl;
-
   
   // ------------------------ Unpack / Create Shim ------------------------- // 
-  unpack_shim_to_path(outputPath, "SHIM_WIN");
+  // unpack_shim_to_path(outputPath, "SHIM_CONSOLE");
+  if (!unpack_shim_to_path(outputPath, L"SHIM_" + shimType)) {
+    cerr << "ERROR - could not unpack shim" << endl;
+    return 1;
+  }
+  
+  cout << "INFO - created shim, "
+       << get_utf8(outputPath.filename()) << ", from "
+       << "SHIM_" << get_utf8(shimType) <<".EXE" << endl;
 
 
   // --------------- Copy Resources from Source App to Shim ---------------- // 
@@ -319,12 +460,13 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
   if (shimArgs != L"") 
     add_shim_argument(hUpdateRes, "SHIM_ARGS", shimArgs);    
   
-  if (argsGui) 
-    add_shim_argument(hUpdateRes, "SHIM_GUI", L"T");
+  add_shim_argument(hUpdateRes, "SHIM_TYPE", shimType);
 
   EndUpdateResource(hUpdateRes, FALSE);
 
-  
-  cout << "ShimGen has successfully created " << get_utf8(outputPath) << endl;
+  cout.clear();
+  cout << "Successfully created shim, " << get_utf8(outputPath) << endl;
   return exitcode;
 }
+
+
