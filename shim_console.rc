@@ -1,9 +1,7 @@
+#define VER_SHIM_FILENAME "shim_console.exe"
 #include "shim_resources.h"
 
-SHIM_GUI        RCDATA      "shim_gui.exe"
-SHIM_CONSOLE    RCDATA      "shim_console.exe"
-
-1               VERSIONINFO
+99              VERSIONINFO
 FILEVERSION     VER_FILEVERSION
 PRODUCTVERSION  VER_FILEVERSION
 FILEOS          0x4
@@ -13,10 +11,10 @@ FILETYPE        0x1
   {    
     BLOCK "040904E4"
     {
-      VALUE "FileDescription",  VER_DESC
+      VALUE "FileDescription",  VER_SHIM_DESC
       VALUE "LegalCopyright",   VER_COPYRIGHT
-      VALUE "InternalName",     VER_FILENAME
-      VALUE "OriginalFilename", VER_FILENAME
+      VALUE "InternalName",     VER_SHIM_FILENAME
+      VALUE "OriginalFilename", VER_SHIM_FILENAME
       VALUE "ProductName",      VER_PRODUCT
       VALUE "ProductVersion",   VER_FILEVERSION_STR
       VALUE "FileVersion",      VER_FILEVERSION_STR
