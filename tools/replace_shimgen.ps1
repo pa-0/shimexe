@@ -23,5 +23,5 @@ else {
     
     Copy-Item "$app_path\$exe_name" "$shimgen_path\shimgen.exe"
     Copy-Item "$app_path\LICENSE" "$shimgen_path\shimgen.license.txt"
-    Write-Host "Replaced shimgen.exe in $shimgen_path from $SG_bin_path"
+    Write-Host "Replaced shimgen.exe in $shimgen_path from $app_path"
 }
