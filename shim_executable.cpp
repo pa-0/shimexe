@@ -270,20 +270,31 @@ argument is also not denoted by a flag, it will be assumed to be OUTPUT.
 // MAIN METHOD                                                               // 
 // ------------------------------------------------------------------------- //
 int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
-if (argc <= 1) {
+  if (argc <= 1) {
     cerr
       << "At least one argument is required. Run with -h for more information."
       << endl;
     return 1;
-    }
+  }
   
   vector<wstring> cmdArgs(argv + 1, argv + argc);
   
-  int     exitcode    = 0;
-  wstring shimType    = L"";
-  wstring shimArgs    = L"";
-  filesystem::path outputPath, inputPath, iconPath;
+  int     exitcode          = 0;
+  wstring shimType          = L"";
+  wstring shimArgs          = L"";
+  bool isShimGen            = false;
+  string exeName;
+  filesystem::path
+    outputPath,
+    inputPath,
+    iconPath,
+    exePath;
 
+  exePath = get_exe_path();
+  exeName = exePath.stem().string();
+  exePath = exePath.parent_path();
+  //   case_insensitive_match(currentPath.stem().string(), "shimgen");
+    
   cout.setstate(ios::failbit);  // start with no cout off
   
   // ----------------------- Parse Command Arguments ----------------------- //
@@ -336,38 +347,75 @@ if (argc <= 1) {
             << endl;
   }
 
-  // ------------------------- Validate Arguments -------------------------- // 
-  // Input Path
+  // ------------------------- Validate Arguments -------------------------- //
+  
+  // ---------- Input Path ---------- // 
   DWORD execType;
   exitcode = 1;
-  if (inputPath.empty())
+  
+  // Check if EMPTY
+  if (inputPath.empty()) {
     cerr << "ERROR - "
          << "a source executable must be specified."
          << endl;
-  else if (!filesystem::exists(inputPath)) 
-    cerr << "ERROR - file, "
-         << get_utf8(inputPath)
-         << ", does not exists."
-         << endl;
-  else if (!filesystem::is_regular_file(inputPath)) 
+    return exitcode;
+  }
+
+
+  // Check if EXIST
+  exitcode = 0;
+  if (!filesystem::exists(inputPath)) {
+    exitcode = 1;
+    
+    if (inputPath.is_relative()) {
+      isShimGen = true;
+      cout << "INFO - path is relative" << endl;
+      cout << "INFO - expanding from current path, "
+           << get_utf8(filesystem::current_path()) << endl;
+      cout << "WARNING - file, "
+           << get_utf8(filesystem::weakly_canonical(inputPath))
+           << ", does not exists." << endl;
+
+      cout << "INFO - expanding from module path, "
+           << get_utf8(exePath) << endl;
+
+      inputPath = exePath / inputPath;    
+      if (filesystem::exists(inputPath)) 
+        exitcode = 0;
+    }
+  }
+
+  inputPath = filesystem::weakly_canonical(inputPath);
+
+  if (exitcode > 0) {
+    cerr << "ERROR - target path, "
+         << get_utf8(inputPath) << ", does not exists." << endl;
+    return exitcode;
+  }
+  
+  // Check if its a REGULAR FILE
+  exitcode = 1;
+  if (!filesystem::is_regular_file(inputPath)) {
     cerr << "ERROR - file, "
          << get_utf8(inputPath.filename())
          << ", is not a regular file."
          << endl;
-  else if ((execType =
-            SHGetFileInfoW(inputPath.c_str(), NULL, NULL, NULL,
-                           SHGFI_EXETYPE)) == 0)
+    return exitcode;
+  }
+
+  
+  execType = SHGetFileInfoW(inputPath.c_str(), NULL, NULL, NULL,
+                            SHGFI_EXETYPE);
+
+  // Check if EXECUTABLE
+  if (execType == 0) {
     cerr << "ERROR - file, "
          << get_utf8(inputPath.filename())
          << ", is not an executable"
          << endl;
-  else
-    exitcode = 0;
-
-  if (exitcode != 0) 
     return exitcode;
-  
-  inputPath = filesystem::weakly_canonical(inputPath);
+  }
+
   
   cout << "INFO - Source Application: "
        << get_utf8(inputPath)
@@ -397,7 +445,9 @@ if (argc <= 1) {
          << " (command argument)" << endl;
 
   
-  // Output Path
+  
+  // ---------- Output Path ---------- // 
+  // Check if EMPTY
   if (outputPath.empty()) {
     outputPath = filesystem::current_path();
     outputPath /= inputPath.filename();
@@ -405,34 +455,49 @@ if (argc <= 1) {
          << get_utf8(outputPath)
          << endl;
   }
-  
-  if (filesystem::is_directory(outputPath)) {
-    outputPath /= inputPath.filename();
-    cout << "WARNING - only output directory was specified, appending "
-         << inputPath.filename()
-         << endl;
+
+  // SHIMGEN is more strict and expands relative paths from the application 
+  if (isShimGen) {
+    // assume OUTPUTPATH is valid and a file regardless
+    cout << "INFO - taking output path verbatim, ";
+
+    // if OUTPUTPATH is relative expand from exe path
+    if (outputPath.is_relative()) {
+      outputPath = exePath / outputPath;
+      cout << "expanding from module path, ";
+    }
+
+    outputPath = filesystem::weakly_canonical(outputPath);
+    cout << get_utf8(outputPath) << "." << endl;
   }
+  else
+    if (filesystem::is_directory(outputPath)) {
+      outputPath /= inputPath.filename();
+      cout << "WARNING - only output directory was specified, appending "
+           << inputPath.filename()
+           << endl;
+    }
 
   outputPath = filesystem::weakly_canonical(outputPath);
 
-  exitcode = 1;
+  // Check if output directory EXISTS
   if (!outputPath.parent_path().empty() &&
-      !filesystem::is_directory(outputPath.parent_path())) 
+      !filesystem::is_directory(outputPath.parent_path())) {
     cerr << "ERROR - output directory, " 
          << outputPath.parent_path()
          << ", does not exist"
          << endl;
-  else if (filesystem::exists(outputPath) &&
-           filesystem::equivalent(outputPath, inputPath)) 
-    cerr << "ERROR - output and input must be different" << endl;
-  else
-    exitcode = 0;
-  
-  if (exitcode != 0)
     return exitcode;
+  }
 
+  // Check if output path EQUALS input path
+  if (filesystem::exists(outputPath) &&
+           filesystem::equivalent(outputPath, inputPath)) {
+    cerr << "ERROR - output and input must be different" << endl;
+    return exitcode;
+  }
   
-  // Icon Path
+  // ---------- Icon Path ---------- // 
   if (!iconPath.empty())
     cout << "WARNING - flags -i --icon not implemented, ignoring" << endl;
 
@@ -465,8 +530,8 @@ if (argc <= 1) {
   EndUpdateResource(hUpdateRes, FALSE);
 
   cout.clear();
-  cout << "Successfully created shim, " << get_utf8(outputPath) << endl;
+  cout << exeName
+       << " has successfully created '"
+       << get_utf8(outputPath) << "'" << endl;
   return exitcode;
 }
-
-

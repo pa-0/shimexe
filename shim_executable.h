@@ -26,6 +26,20 @@ bool wstring_starts_with(const wstring& strA, const wstring& strB) {
   return ((strA.compare(0, strB.length(), strB)) == 0);
 }
 
+
+bool compare_insensitive(string s1, string s2) {
+   //convert s1 and s2 into lower case strings
+   transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
+   transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
+   return s1.compare(s2) == 0;
+}
+
+filesystem::path get_exe_path() {
+  TCHAR   cExePath[MAX_PATH];  
+  GetModuleFileName(NULL, cExePath, MAX_PATH);
+  return filesystem::path(cExePath);
+}  
+
 // ---------------------- Get Command Line Arguments ----------------------- // 
 bool get_cmd_arg(
     vector<wstring>& args,
